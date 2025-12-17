@@ -63,7 +63,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnutils"
-	"github.com/lightningnetwork/lnd/lnwallet"
+        "github.com/lightningnetwork/lnd/lnwallet"
+        "github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwallet/btcwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwallet/chancloser"
@@ -4660,6 +4661,105 @@ func (r *rpcServer) LookupHtlcResolution(
 		Settled:  info.Settled,
 		Offchain: info.Offchain,
 	}, nil
+}
+
+// ChannelTransactions returns raw commitment and timeout transactions for a
+// specific channel so operators can inspect their state.
+func (r *rpcServer) ChannelTransactions(ctx context.Context,
+	req *lnrpc.ChannelTxRequest) (*lnrpc.ChannelTxResponse, error) {
+	if err := lnrpc.ValidateChannelPoint(req.GetChannelPoint()); err != nil {
+		return nil, err
+	}
+
+	txid, err := lnrpc.GetChanPointFundingTxid(req.ChannelPoint)
+	if err != nil {
+		return nil, err
+	}
+	chanPoint := wire.NewOutPoint(txid, req.ChannelPoint.OutputIndex)
+
+	chanState, err := r.server.chanStateDB.FetchChannel(*chanPoint)
+	if err != nil {
+		return nil, err
+	}
+
+	if chanState.LocalCommitment.CommitTx == nil ||
+		chanState.RemoteCommitment.CommitTx == nil {
+
+		return nil, fmt.Errorf("missing commitment tx for channel %v",
+			chanPoint)
+	}
+
+	resp := &lnrpc.ChannelTxResponse{}
+	resp.LocalCommitTxHex, err = encodeTxHex(
+		chanState.LocalCommitment.CommitTx,
+	)
+	if err != nil {
+		return nil, err
+	}
+	resp.RemoteCommitTxHex, err = encodeTxHex(
+		chanState.RemoteCommitment.CommitTx,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	feePerKw := chainfee.SatPerKWeight(chanState.LocalCommitment.FeePerKw)
+	leaseExpiry := chanState.ThawHeight
+	keyRing := lnwallet.DeriveCommitmentKeys(
+		chanState.RemoteCurrentRevocation, lntypes.Remote,
+		chanState.ChanType, &chanState.LocalChanCfg,
+		&chanState.RemoteChanCfg,
+	)
+	if keyRing == nil {
+		return nil, fmt.Errorf("unable to derive commitment keys")
+	}
+
+	commitHash := chanState.LocalCommitment.CommitTx.TxHash()
+	for _, htlc := range chanState.LocalCommitment.Htlcs {
+		if htlc.Incoming || htlc.OutputIndex < 0 {
+			continue
+		}
+
+		op := wire.OutPoint{
+			Hash:  commitHash,
+			Index: uint32(htlc.OutputIndex),
+		}
+
+		fee := lnwallet.HtlcTimeoutFee(chanState.ChanType, feePerKw)
+		originalAmt := htlc.Amt.ToSatoshis()
+		sweepAmt := originalAmt - fee
+		if sweepAmt < 0 {
+			sweepAmt = 0
+		}
+
+		timeoutTx, err := lnwallet.CreateHtlcTimeoutTx(
+			chanState.ChanType, chanState.IsInitiator, op,
+			sweepAmt, htlc.RefundTimeout,
+			uint32(chanState.LocalChanCfg.CsvDelay), leaseExpiry,
+			keyRing.RevocationKey, keyRing.ToLocalKey,
+			fn.None[txscript.TapLeaf](),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		txHex, err := encodeTxHex(timeoutTx)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.TimeoutTxs = append(resp.TimeoutTxs, &lnrpc.HTLCTimeoutTx{
+			HtlcIndex:        htlc.HtlcIndex,
+			TimeoutTxHex:     txHex,
+			CltvExpiry:       htlc.RefundTimeout,
+			OriginalAmountSat: int64(originalAmt),
+			TimeoutSweepSat:   int64(sweepAmt),
+			OutputIndex:        uint32(htlc.OutputIndex),
+			Outpoint: fmt.Sprintf("%v:%d", commitHash, op.Index),
+		})
+	}
+
+	return resp, nil
 }
 
 // ListChannels returns a description of all the open channels that this node
