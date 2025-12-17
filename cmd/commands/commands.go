@@ -1790,6 +1790,48 @@ var pendingChannelsCommand = cli.Command{
 	Action: actionDecorator(pendingChannels),
 }
 
+var channelTransactionsCommand = cli.Command{
+	Name:     "channeltransactions",
+	Category: "Channels",
+	Usage: "Display the raw commitment transaction hex and HTLC timeout " +
+		"transactions for a specific channel.",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: "chan_point",
+			Usage: "channel to inspect, format: txid:index",
+		},
+	},
+	Action: actionDecorator(channelTransactions),
+}
+
+func channelTransactions(ctx *cli.Context) error {
+	chanPointStr := ctx.String("chan_point")
+	if chanPointStr == "" {
+		return fmt.Errorf("chan_point must be specified")
+	}
+
+	chanPoint, err := parseChanPoint(chanPointStr)
+	if err != nil {
+		return err
+	}
+
+	ctxc := getContext()
+	client, cleanUp := getClient(ctx)
+	defer cleanUp()
+
+	req := &lnrpc.ChannelTxRequest{
+		ChannelPoint: chanPoint,
+	}
+
+	resp, err := client.ChannelTransactions(ctxc, req)
+	if err != nil {
+		return err
+	}
+
+	printRespJSON(resp)
+	return nil
+}
+
 func pendingChannels(ctx *cli.Context) error {
 	ctxc := getContext()
 	client, cleanUp := getClient(ctx)
