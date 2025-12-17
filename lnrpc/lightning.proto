@@ -611,6 +611,9 @@ service Lightning {
     */
     rpc LookupHtlcResolution (LookupHtlcResolutionRequest)
         returns (LookupHtlcResolutionResponse);
+
+    rpc ChannelTransactions (ChannelTxRequest)
+        returns (ChannelTxResponse);
 }
 
 message LookupHtlcResolutionRequest {
@@ -2919,6 +2922,45 @@ message PendingChannelsResponse {
         pending commitment.
         */
         uint64 remote_pending_commit_fee_sat = 6;
+    }
+
+    message ChannelTxRequest {
+        // The target channel to inspect.
+        ChannelPoint channel_point = 1;
+    }
+
+    message HTLCTimeoutTx {
+        // The HTLC index on the commitment transaction.
+        uint64 htlc_index = 1;
+
+        // Raw hex encoded timeout transaction which spends the HTLC output.
+        string timeout_tx_hex = 2;
+
+        // CLTV expiry height for the HTLC.
+        uint32 cltv_expiry = 3;
+
+        // Original HTLC amount in satoshis.
+        int64 original_amount_sat = 4;
+
+        // Amount in satoshis paid out by the timeout transaction.
+        int64 timeout_sweep_sat = 5;
+
+        // The output index within the commitment transaction for this HTLC.
+        uint32 output_index = 6;
+
+        // Outpoint representation "txid:index" for the HTLC output.
+        string outpoint = 7;
+    }
+
+    message ChannelTxResponse {
+        // Raw hex encoded local commitment transaction.
+        string local_commit_tx_hex = 1;
+
+        // Raw hex encoded remote commitment transaction.
+        string remote_commit_tx_hex = 2;
+
+        // Locally generated HTLC timeout transactions for the channel.
+        repeated HTLCTimeoutTx timeout_txs = 3;
     }
 
     message ClosedChannel {
