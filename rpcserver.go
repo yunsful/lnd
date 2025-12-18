@@ -63,8 +63,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnutils"
-        "github.com/lightningnetwork/lnd/lnwallet"
-        "github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/btcwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwallet/chancloser"
@@ -377,6 +376,10 @@ func MainRPCServerPermissions() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		"/lnrpc.Lightning/ChannelBalance": {{
+			Entity: "offchain",
+			Action: "read",
+		}},
+		"/lnrpc.Lightning/ChannelTransactions": {{
 			Entity: "offchain",
 			Action: "read",
 		}},
@@ -4690,17 +4693,18 @@ func (r *rpcServer) ChannelTransactions(ctx context.Context,
 	}
 
 	resp := &lnrpc.ChannelTxResponse{}
-	resp.LocalCommitTxHex, err = encodeTxHex(
-		chanState.LocalCommitment.CommitTx,
-	)
+	resp.LocalCommitTxHex, err = txToHex(chanState.LocalCommitment.CommitTx)
 	if err != nil {
 		return nil, err
 	}
-	resp.RemoteCommitTxHex, err = encodeTxHex(
-		chanState.RemoteCommitment.CommitTx,
-	)
+	resp.RemoteCommitTxHex, err = txToHex(chanState.RemoteCommitment.CommitTx)
 	if err != nil {
 		return nil, err
+	}
+
+	if chanState.RemoteCurrentRevocation == nil {
+		return nil, fmt.Errorf("remote commit point unknown for channel %v",
+			chanPoint)
 	}
 
 	feePerKw := chainfee.SatPerKWeight(chanState.LocalCommitment.FeePerKw)
@@ -4743,7 +4747,7 @@ func (r *rpcServer) ChannelTransactions(ctx context.Context,
 			return nil, err
 		}
 
-		txHex, err := encodeTxHex(timeoutTx)
+		txHex, err := txToHex(timeoutTx)
 		if err != nil {
 			return nil, err
 		}
@@ -4760,6 +4764,16 @@ func (r *rpcServer) ChannelTransactions(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+// txToHex serializes a tx into raw hex form.
+func txToHex(tx *wire.MsgTx) (string, error) {
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(buf.Bytes()), nil
 }
 
 // ListChannels returns a description of all the open channels that this node

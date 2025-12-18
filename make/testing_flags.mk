@@ -1,5 +1,5 @@
-DEV_TAGS = dev
-RPC_TAGS = autopilotrpc chainrpc invoicesrpc neutrinorpc peersrpc routerrpc signrpc verrpc walletrpc watchtowerrpc wtclientrpc
+DEV_TAGS ?= dev $(DEFAULT_TAGS)
+RPC_TAGS ?= $(ALL_RPC_TAGS)
 LOG_TAGS =
 TEST_FLAGS =
 ITEST_FLAGS =
@@ -12,11 +12,6 @@ NUM_ITEST_TRANCHES = 4
 ITEST_PARALLELISM = $(NUM_ITEST_TRANCHES)
 POSTGRES_START_DELAY = 5
 SHUFFLE_SEED = 0
-
-# If rpc option is set also add all extra RPC tags to DEV_TAGS
-ifneq ($(with-rpc),)
-DEV_TAGS += $(RPC_TAGS)
-endif
 
 # Scale the number of parallel running itest tranches.
 ifneq ($(tranches),)

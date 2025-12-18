@@ -52,6 +52,9 @@ http:
       get: "/v1/channels/pending"
     - selector: lnrpc.Lightning.ListChannels
       get: "/v1/channels"
+    - selector: lnrpc.Lightning.ChannelTransactions
+      post: "/v1/channels/transactions/raw"
+      body: "*"
     - selector: lnrpc.Lightning.SubscribeChannelEvents
       get: "/v1/channels/subscribe"
     - selector: lnrpc.Lightning.ClosedChannels

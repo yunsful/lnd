@@ -201,6 +201,17 @@ func GetChanPointFundingTxid(chanPoint *ChannelPoint) (*chainhash.Hash, error) {
 	return chainhash.NewHash(txid)
 }
 
+// ValidateChannelPoint ensures the channel point is populated with a funding
+// transaction id that can be parsed.
+func ValidateChannelPoint(chanPoint *ChannelPoint) error {
+	if chanPoint == nil {
+		return errors.New("channel point must be specified")
+	}
+
+	_, err := GetChanPointFundingTxid(chanPoint)
+	return err
+}
+
 // GetChannelOutPoint returns the outpoint of the related channel point.
 func GetChannelOutPoint(chanPoint *ChannelPoint) (*OutPoint, error) {
 	var txid []byte

@@ -21,6 +21,14 @@ ANDROID_BUILD := $(ANDROID_BUILD_DIR)/Lndmobile.aar
 
 COMMIT := $(shell git describe --tags --dirty)
 
+# Feature build tags that we want to enable by default across dev/release
+# builds so binaries ship with every optional subserver and DB backend.
+ALL_RPC_TAGS := autopilotrpc chainrpc invoicesrpc neutrinorpc peersrpc routerrpc \
+	signrpc verrpc walletrpc watchtowerrpc wtclientrpc
+KVDB_TAGS := kvdb_postgres kvdb_etcd kvdb_sqlite
+EXTRA_FEATURE_TAGS := monitoring
+DEFAULT_TAGS := $(ALL_RPC_TAGS) $(EXTRA_FEATURE_TAGS) $(KVDB_TAGS)
+
 # Determine the minor version of the active Go installation.
 ACTIVE_GO_VERSION := $(shell $(GOCC) version | sed -nre 's/^[^0-9]*(([0-9]+\.)*[0-9]+).*/\1/p')
 ACTIVE_GO_VERSION_MINOR := $(shell echo $(ACTIVE_GO_VERSION) | cut -d. -f2)
@@ -123,8 +131,8 @@ build-itest-race:
 #? install-binaries: Build and install lnd and lncli binaries, place them in $GOPATH/bin
 install-binaries:
 	@$(call print, "Installing lnd and lncli.")
-	$(GOINSTALL) -tags="${tags}" -ldflags="$(RELEASE_LDFLAGS)" $(PKG)/cmd/lnd
-	$(GOINSTALL) -tags="${tags}" -ldflags="$(RELEASE_LDFLAGS)" $(PKG)/cmd/lncli
+	$(GOINSTALL) -tags="$(if $(tags),$(tags),$(DEFAULT_TAGS))" -ldflags="$(RELEASE_LDFLAGS)" $(PKG)/cmd/lnd
+	$(GOINSTALL) -tags="$(if $(tags),$(tags),$(DEFAULT_TAGS))" -ldflags="$(RELEASE_LDFLAGS)" $(PKG)/cmd/lncli
 
 #? manpages: generate and install man pages
 manpages:

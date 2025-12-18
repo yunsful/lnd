@@ -16,46 +16,6 @@
     "application/json"
   ],
   "paths": {
-    "/v1/channels/transactions": {
-      "post": {
-        "tags": [
-          "Lightning"
-        ],
-        "summary": "ChannelTransactions",
-        "description": "ChannelTransactions returns raw commitment and timeout transactions for a specific channel.",
-        "operationId": "ChannelTransactions",
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/lnrpcChannelTxRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/lnrpcChannelTxResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        }
-      }
-    },
     "/v1/aliases/list": {
       "get": {
         "summary": "lncli: `listaliases`\nListAliases returns the set of all aliases that have ever existed with\ntheir confirmed SCID (if it exists) and/or the base SCID (in the case of\nzero conf).",
@@ -778,6 +738,39 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/lnrpcSendRequest"
+            }
+          }
+        ],
+        "tags": [
+          "Lightning"
+        ]
+      }
+    },
+    "/v1/channels/transactions/raw": {
+      "post": {
+        "summary": "lncli: `channeltransactions`\nChannelTransactions returns raw commitment/timeout transaction hex for a\nspecific channel so operators can audit their current off-chain state.",
+        "operationId": "Lightning_ChannelTransactions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/lnrpcChannelTxResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/lnrpcChannelTxRequest"
             }
           }
         ],
@@ -4677,6 +4670,36 @@
         }
       }
     },
+    "lnrpcChannelTxRequest": {
+      "type": "object",
+      "properties": {
+        "channel_point": {
+          "$ref": "#/definitions/lnrpcChannelPoint",
+          "description": "The target channel to inspect."
+        }
+      }
+    },
+    "lnrpcChannelTxResponse": {
+      "type": "object",
+      "properties": {
+        "local_commit_tx_hex": {
+          "type": "string",
+          "description": "Raw hex encoded local commitment transaction."
+        },
+        "remote_commit_tx_hex": {
+          "type": "string",
+          "description": "Raw hex encoded remote commitment transaction."
+        },
+        "timeout_txs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/lnrpcHTLCTimeoutTx"
+          },
+          "description": "Locally generated HTLC timeout transactions for the channel."
+        }
+      }
+    },
     "lnrpcChannelUpdate": {
       "type": "object",
       "properties": {
@@ -4769,77 +4792,12 @@
       }
     },
     "lnrpcCheckMacPermResponse": {
-        "type": "object",
-        "properties": {
-            "valid": {
-                "type": "boolean"
-            }
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
         }
-    },
-    "lnrpcChannelTxRequest": {
-        "type": "object",
-        "properties": {
-            "channel_point": {
-                "$ref": "#/definitions/lnrpcChannelPoint"
-            }
-        }
-    },
-    "lnrpcHTLCTimeoutTx": {
-        "type": "object",
-        "properties": {
-            "htlc_index": {
-                "type": "string",
-                "format": "uint64",
-                "description": "The HTLC index on the commitment transaction."
-            },
-            "timeout_tx_hex": {
-                "type": "string",
-                "description": "Raw hex encoded timeout transaction which spends the HTLC output."
-            },
-            "cltv_expiry": {
-                "type": "integer",
-                "format": "int32",
-                "description": "CLTV expiry height for the HTLC."
-            },
-            "original_amount_sat": {
-                "type": "string",
-                "format": "int64",
-                "description": "Original HTLC amount in satoshis."
-            },
-            "timeout_sweep_sat": {
-                "type": "string",
-                "format": "int64",
-                "description": "Amount in satoshis paid out by the timeout transaction."
-            },
-            "output_index": {
-                "type": "integer",
-                "format": "uint32",
-                "description": "The output index within the commitment transaction for this HTLC."
-            },
-            "outpoint": {
-                "type": "string",
-                "description": "Outpoint representation \"txid:index\" for the HTLC output."
-            }
-        }
-    },
-    "lnrpcChannelTxResponse": {
-        "type": "object",
-        "properties": {
-            "local_commit_tx_hex": {
-                "type": "string",
-                "description": "Raw hex encoded local commitment transaction."
-            },
-            "remote_commit_tx_hex": {
-                "type": "string",
-                "description": "Raw hex encoded remote commitment transaction."
-            },
-            "timeout_txs": {
-                "type": "array",
-                "items": {
-                    "$ref": "#/definitions/lnrpcHTLCTimeoutTx"
-                }
-            }
-        }
+      }
     },
     "lnrpcCloseOutput": {
       "type": "object",
@@ -5708,6 +5666,44 @@
           "type": "string",
           "format": "byte",
           "description": "The preimage that was used to settle the HTLC."
+        }
+      }
+    },
+    "lnrpcHTLCTimeoutTx": {
+      "type": "object",
+      "properties": {
+        "htlc_index": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The HTLC index on the commitment transaction."
+        },
+        "timeout_tx_hex": {
+          "type": "string",
+          "description": "Raw hex encoded timeout transaction which spends the HTLC output."
+        },
+        "cltv_expiry": {
+          "type": "integer",
+          "format": "int64",
+          "description": "CLTV expiry height for the HTLC."
+        },
+        "original_amount_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "Original HTLC amount in satoshis."
+        },
+        "timeout_sweep_sat": {
+          "type": "string",
+          "format": "int64",
+          "description": "Amount in satoshis paid out by the timeout transaction."
+        },
+        "output_index": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The output index within the commitment transaction for this HTLC."
+        },
+        "outpoint": {
+          "type": "string",
+          "description": "Outpoint representation \"txid:index\" for the HTLC output."
         }
       }
     },
