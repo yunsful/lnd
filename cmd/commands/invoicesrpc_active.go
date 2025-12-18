@@ -198,6 +198,11 @@ var addHoldInvoiceCommand = cli.Command{
 				"private channels in order to assist the " +
 				"payer in reaching you",
 		},
+		cli.BoolFlag{
+			Name: "ignore_cancel",
+			Usage: "keep the hold invoice locked even if " +
+				"cancelinvoice is called",
+		},
 	},
 	Action: actionDecorator(addHoldInvoice),
 }
@@ -251,6 +256,7 @@ func addHoldInvoice(ctx *cli.Context) error {
 		Expiry:          ctx.Int64("expiry"),
 		CltvExpiry:      ctx.Uint64("cltv_expiry_delta"),
 		Private:         ctx.Bool("private"),
+		IgnoreCancel:    ctx.Bool("ignore_cancel"),
 	}
 
 	resp, err := client.AddHoldInvoice(ctxc, invoice)

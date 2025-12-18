@@ -2052,6 +2052,10 @@
           "type": "boolean",
           "description": "If set, the payment loop can be interrupted by manually canceling the\npayment context, even before the payment timeout is reached. Note that the\npayment may still succeed after cancellation, as in-flight attempts can\nstill settle afterwards. Canceling will only prevent further attempts from\nbeing sent."
         },
+        "ignore_payment_cancel": {
+          "type": "boolean",
+          "description": "Ignore local cancellation/timeout handling and wait for HTLC timeout."
+        },
         "first_hop_custom_records": {
           "type": "object",
           "additionalProperties": {

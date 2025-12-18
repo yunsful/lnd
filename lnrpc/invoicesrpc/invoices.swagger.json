@@ -326,6 +326,10 @@
         "private": {
           "type": "boolean",
           "description": "Whether this invoice should include routing hints for private channels."
+        },
+        "ignore_cancel": {
+          "type": "boolean",
+          "description": "If set, cancel requests for this hold invoice will be ignored."
         }
       }
     },

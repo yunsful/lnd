@@ -153,6 +153,12 @@ var (
 			"Canceling will only prevent further attempts from " +
 			"being sent",
 	}
+
+	ignorePayCancelFlag = cli.BoolFlag{
+		Name: "ignorepaycancel",
+		Usage: "ignore local payment cancel or timeout requests so " +
+			"the peer must rely on htlc-timeout transactions",
+	}
 )
 
 // PaymentFlags returns common flags for sendpayment and payinvoice.
@@ -181,6 +187,7 @@ func PaymentFlags() []cli.Flag {
 			Value: paymentTimeout,
 		},
 		cancelableFlag,
+		ignorePayCancelFlag,
 		cltvLimitFlag,
 		lastHopFlag,
 		cli.StringSliceFlag{
@@ -352,11 +359,12 @@ func SendPayment(ctx *cli.Context) error {
 	// details of the payment are encoded within the request.
 	if ctx.IsSet("pay_req") {
 		req := &routerrpc.SendPaymentRequest{
-			PaymentRequest:    StripPrefix(ctx.String("pay_req")),
-			Amt:               ctx.Int64("amt"),
-			DestCustomRecords: make(map[uint64][]byte),
-			Amp:               ctx.Bool(ampFlag.Name),
-			Cancelable:        ctx.Bool(cancelableFlag.Name),
+			PaymentRequest:      StripPrefix(ctx.String("pay_req")),
+			Amt:                 ctx.Int64("amt"),
+			DestCustomRecords:   make(map[uint64][]byte),
+			Amp:                 ctx.Bool(ampFlag.Name),
+			Cancelable:          ctx.Bool(cancelableFlag.Name),
+			IgnorePaymentCancel: ctx.Bool(ignorePayCancelFlag.Name),
 		}
 
 		// We'll attempt to parse a payment address as well, given that
@@ -413,11 +421,12 @@ func SendPayment(ctx *cli.Context) error {
 	}
 
 	req := &routerrpc.SendPaymentRequest{
-		Dest:              destNode,
-		Amt:               amount,
-		DestCustomRecords: make(map[uint64][]byte),
-		Amp:               ctx.Bool(ampFlag.Name),
-		Cancelable:        ctx.Bool(cancelableFlag.Name),
+		Dest:                destNode,
+		Amt:                 amount,
+		DestCustomRecords:   make(map[uint64][]byte),
+		Amp:                 ctx.Bool(ampFlag.Name),
+		Cancelable:          ctx.Bool(cancelableFlag.Name),
+		IgnorePaymentCancel: ctx.Bool(ignorePayCancelFlag.Name),
 	}
 
 	var rHash []byte
@@ -541,10 +550,16 @@ func SendPaymentRequest(ctx *cli.Context, req *routerrpc.SendPaymentRequest,
 	req.CltvLimit = int32(ctx.Int(cltvLimitFlag.Name))
 
 	pmtTimeout := ctx.Duration("timeout")
-	if pmtTimeout <= 0 {
+	if pmtTimeout <= 0 && !req.IgnorePaymentCancel {
 		return errors.New("payment timeout must be greater than zero")
 	}
-	req.TimeoutSeconds = int32(pmtTimeout.Seconds())
+	// 기존에는 항상 positive timeout 을 요구했다.
+	// req.TimeoutSeconds = int32(pmtTimeout.Seconds())
+	if req.IgnorePaymentCancel {
+		req.TimeoutSeconds = 0
+	} else {
+		req.TimeoutSeconds = int32(pmtTimeout.Seconds())
+	}
 
 	req.AllowSelfPayment = ctx.Bool("allow_self_payment")
 
@@ -944,11 +959,12 @@ func payInvoice(ctx *cli.Context) error {
 	}
 
 	req := &routerrpc.SendPaymentRequest{
-		PaymentRequest:    StripPrefix(payReq),
-		Amt:               ctx.Int64("amt"),
-		DestCustomRecords: make(map[uint64][]byte),
-		Amp:               ctx.Bool(ampFlag.Name),
-		Cancelable:        ctx.Bool(cancelableFlag.Name),
+		PaymentRequest:      StripPrefix(payReq),
+		Amt:                 ctx.Int64("amt"),
+		DestCustomRecords:   make(map[uint64][]byte),
+		Amp:                 ctx.Bool(ampFlag.Name),
+		Cancelable:          ctx.Bool(cancelableFlag.Name),
+		IgnorePaymentCancel: ctx.Bool(ignorePayCancelFlag.Name),
 	}
 
 	return SendPaymentRequest(ctx, req, conn, conn, routerRPCSendPayment)

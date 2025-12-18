@@ -354,7 +354,15 @@ func (s *Server) SendPaymentV2(req *SendPaymentRequest,
 	stream Router_SendPaymentV2Server) error {
 
 	// Set payment request attempt timeout.
-	if req.TimeoutSeconds == 0 {
+	// 기존에는 timeout_seconds 가 0이면 DefaultPaymentTimeout을
+	// 강제로 설정했다.
+	// if req.TimeoutSeconds == 0 {
+	// 	req.TimeoutSeconds = DefaultPaymentTimeout
+	// }
+	if req.IgnorePaymentCancel {
+		req.TimeoutSeconds = 0
+	}
+	if !req.IgnorePaymentCancel && req.TimeoutSeconds == 0 {
 		req.TimeoutSeconds = DefaultPaymentTimeout
 	}
 
@@ -402,7 +410,11 @@ func (s *Server) SendPaymentV2(req *SendPaymentRequest,
 	// user provided 'cancelable' and ends the stream before the timeout is
 	// reached the payment will be canceled.
 	ctx := context.Background()
-	if req.Cancelable {
+	// 기존 코드:
+	// if req.Cancelable {
+	// 	ctx = stream.Context()
+	// }
+	if req.Cancelable && !req.IgnorePaymentCancel {
 		ctx = stream.Context()
 	}
 

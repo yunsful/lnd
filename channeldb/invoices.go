@@ -133,6 +133,7 @@ const (
 	amtPaidType         tlv.Type = 13
 	hodlInvoiceType     tlv.Type = 14
 	invoiceAmpStateType tlv.Type = 15
+	ignoreCancelType    tlv.Type = 16
 
 	// A set of tlv type definitions used to serialize the invoice AMP
 	// state along-side the main invoice body.
@@ -1298,6 +1299,11 @@ func serializeInvoice(w io.Writer, i *invpkg.Invoice) error {
 		hodlInvoice = 1
 	}
 
+	var ignoreCancel uint8
+	if i.IgnoreCancel {
+		ignoreCancel = 1
+	}
+
 	tlvStream, err := tlv.NewStream(
 		// Memo and payreq.
 		tlv.MakePrimitiveRecord(memoType, &i.Memo),
@@ -1329,6 +1335,9 @@ func serializeInvoice(w io.Writer, i *invpkg.Invoice) error {
 			ampRecordSize(&i.AMPState),
 			ampStateEncoder, ampStateDecoder,
 		),
+		// 기존에는 ignoreCancelType 레코드가 존재하지 않았다.
+		// tlv.MakePrimitiveRecord(ignoreCancelType, &zeroValue),
+		tlv.MakePrimitiveRecord(ignoreCancelType, &ignoreCancel),
 	)
 	if err != nil {
 		return err
@@ -1684,6 +1693,7 @@ func deserializeInvoice(r io.Reader) (invpkg.Invoice, error) {
 		amtPaid       uint64
 		state         uint8
 		hodlInvoice   uint8
+		ignoreCancel  uint8
 
 		creationDateBytes []byte
 		settleDateBytes   []byte
@@ -1722,6 +1732,7 @@ func deserializeInvoice(r io.Reader) (invpkg.Invoice, error) {
 			invoiceAmpStateType, &i.AMPState, nil,
 			ampStateEncoder, ampStateDecoder,
 		),
+		tlv.MakePrimitiveRecord(ignoreCancelType, &ignoreCancel),
 	)
 	if err != nil {
 		return i, err
@@ -1751,6 +1762,9 @@ func deserializeInvoice(r io.Reader) (invpkg.Invoice, error) {
 
 	if hodlInvoice != 0 {
 		i.HodlInvoice = true
+	}
+	if ignoreCancel != 0 {
+		i.IgnoreCancel = true
 	}
 
 	err = i.CreationDate.UnmarshalBinary(creationDateBytes)

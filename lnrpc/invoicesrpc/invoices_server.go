@@ -377,6 +377,7 @@ func (s *Server) AddHoldInvoice(ctx context.Context,
 		CltvExpiry:      invoice.CltvExpiry,
 		Private:         invoice.Private,
 		HodlInvoice:     true,
+		IgnoreCancel:    invoice.IgnoreCancel,
 		Preimage:        nil,
 		RouteHints:      routeHints,
 	}

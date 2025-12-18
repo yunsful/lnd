@@ -1470,7 +1470,15 @@ func (i *InvoiceRegistry) cancelInvoiceImpl(ctx context.Context,
 	log.Debugf("Invoice%v: canceling invoice", ref)
 
 	updateInvoice := func(invoice *Invoice) (*InvoiceUpdateDesc, error) {
+		if invoice.IgnoreCancel {
+			log.Debugf("Invoice%v: ignoring cancel request per "+
+				"ignore_cancel flag", ref)
+			return nil, nil
+		}
+
 		if !shouldCancel(invoice.State, cancelAccepted) {
+			// 기존에는 cancelAccepted 검사만 수행했다.
+			// return nil, nil
 			return nil, nil
 		}
 

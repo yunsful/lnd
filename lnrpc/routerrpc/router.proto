@@ -367,6 +367,9 @@ message SendPaymentRequest {
     */
     bool cancelable = 24;
 
+    // Ignore local cancellation/timeout handling and wait for HTLC timeout.
+    bool ignore_payment_cancel = 26;
+
     /*
     An optional field that can be used to pass an arbitrary set of TLV records
     to the first hop peer of this payment. This can be used to pass application

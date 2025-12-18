@@ -128,6 +128,9 @@ message AddHoldInvoiceRequest {
 
     // Whether this invoice should include routing hints for private channels.
     bool private = 9;
+
+    // If set, cancel requests for this hold invoice will be ignored.
+    bool ignore_cancel = 11;
 }
 
 message AddHoldInvoiceResp {

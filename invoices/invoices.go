@@ -424,6 +424,10 @@ type Invoice struct {
 	// HodlInvoice indicates whether the invoice should be held in the
 	// Accepted state or be settled right away.
 	HodlInvoice bool
+
+	// IgnoreCancel keeps this invoice in the accepted state even if a
+	// CancelInvoice RPC is issued.
+	IgnoreCancel bool
 }
 
 // HTLCSet returns the set of HTLCs belonging to setID and in the provided

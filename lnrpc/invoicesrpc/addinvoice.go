@@ -142,6 +142,9 @@ type AddInvoiceData struct {
 	// immediately upon receiving the payment.
 	HodlInvoice bool
 
+	// IgnoreCancel indicates that cancel RPC calls should be ignored.
+	IgnoreCancel bool
+
 	// Amp signals whether or not to create an AMP invoice.
 	//
 	// NOTE: Preimage should always be set to nil when this value is true.
@@ -607,7 +610,10 @@ func AddInvoice(ctx context.Context, cfg *AddInvoiceConfig,
 			PaymentAddr:     paymentAddr,
 			Features:        invoiceFeatures,
 		},
-		HodlInvoice: invoice.HodlInvoice,
+		HodlInvoice:  invoice.HodlInvoice,
+		// 기존에는 IgnoreCancel 플래그가 없어서 항상 false였다.
+		// IgnoreCancel: false,
+		IgnoreCancel: invoice.IgnoreCancel,
 	}
 
 	log.Tracef("[addinvoice] adding new invoice %v",
