@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -2029,6 +2030,15 @@ func (c *OpenChannel) markBroadcasted(status ChannelStatus, key []byte,
 	// transaction in the appropriate bucket under the given key.
 	var putClosingTx func(kvdb.RwBucket) error
 	if closeTx != nil {
+		if bytes.Equal(key, forceCloseTxKey) {
+			var buf bytes.Buffer
+			if err := closeTx.Serialize(&buf); err != nil {
+				log.Errorf("failed to serialize commitment tx: %v", err)
+			} else {
+				log.Debugf("Commitment transaction hex: %s", hex.EncodeToString(buf.Bytes()))
+			}
+		}
+
 		var b bytes.Buffer
 		if err := WriteElement(&b, closeTx); err != nil {
 			return err

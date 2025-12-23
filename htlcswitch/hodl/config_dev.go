@@ -26,6 +26,8 @@ type Config struct {
 	Commit bool `long:"commit" description:"Instructs the node to add HTLCs to its local commitment state and to open circuits for any ADDs, but abort before committing the changes"`
 
 	BogusSettle bool `long:"bogus-settle" description:"Instructs the node to settle back any incoming HTLC with a bogus preimage"`
+
+	IgnoreHtlcCancellations bool `long:"ignore-htlc-cancellations" description:"Instructs the node to ignore incoming HTLC cancellation requests. This will likely cause the upstream peer to force-close the channel."`
 }
 
 // Mask extracts the flags specified in the configuration, composing a Mask from
@@ -59,6 +61,9 @@ func (c *Config) Mask() Mask {
 	}
 	if c.BogusSettle {
 		flags = append(flags, BogusSettle)
+	}
+	if c.IgnoreHtlcCancellations {
+		flags = append(flags, IgnoreHtlcCancellations)
 	}
 
 	// NOTE: The value returned here will only honor the configuration if

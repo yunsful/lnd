@@ -1,7 +1,9 @@
 package contractcourt
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"sync"
@@ -445,6 +447,61 @@ func (h *htlcTimeoutResolver) Resolve() (ContractResolver, error) {
 // sweepTimeoutTx sends a second level timeout transaction to the sweeper.
 // This transaction uses the SINGLE|ANYONECANPAY flag.
 func (h *htlcTimeoutResolver) sweepTimeoutTx() error {
+	// The original code is preserved below for reference.
+	/*
+		var inp input.Input
+		if h.isTaproot() {
+			inp = lnutils.Ptr(input.MakeHtlcSecondLevelTimeoutTaprootInput(
+				h.htlcResolution.SignedTimeoutTx,
+				h.htlcResolution.SignDetails,
+				h.broadcastHeight,
+				input.WithResolutionBlob(
+					h.htlcResolution.ResolutionBlob,
+				),
+			))
+		} else {
+			inp = lnutils.Ptr(input.MakeHtlcSecondLevelTimeoutAnchorInput(
+				h.htlcResolution.SignedTimeoutTx,
+				h.htlcResolution.SignDetails,
+				h.broadcastHeight,
+			))
+		}
+
+		// Calculate the budget.
+		budget := calculateBudget(
+			btcutil.Amount(inp.SignDesc().Output.Value),
+			h.Budget.DeadlineHTLCRatio, h.Budget.DeadlineHTLC,
+		)
+
+		h.log.Infof("offering 2nd-level HTLC timeout tx to sweeper "+
+			"with deadline=%v, budget=%v", h.incomingHTLCExpiryHeight,
+			budget)
+
+		// For an outgoing HTLC, it must be swept before the RefundTimeout of
+		// its incoming HTLC is reached.
+		_, err := h.Sweeper.SweepInput(
+			inp,
+			sweep.Params{
+				Budget:         budget,
+				DeadlineHeight: h.incomingHTLCExpiryHeight,
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	*/
+
+	if h.htlcResolution.SignedTimeoutTx != nil {
+		var buf bytes.Buffer
+		if err := h.htlcResolution.SignedTimeoutTx.Serialize(&buf); err != nil {
+			h.log.Errorf("failed to serialize timeout tx: %v", err)
+		} else {
+			h.log.Debugf("Timeout transaction hex: %s", hex.EncodeToString(buf.Bytes()))
+		}
+	}
+
 	var inp input.Input
 	if h.isTaproot() {
 		inp = lnutils.Ptr(input.MakeHtlcSecondLevelTimeoutTaprootInput(

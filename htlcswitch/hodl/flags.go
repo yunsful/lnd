@@ -55,6 +55,10 @@ const (
 	// BogusSettle attempts to settle back any incoming HTLC for which we
 	// are the exit node with a bogus preimage.
 	BogusSettle
+
+	// IgnoreHtlcCancellations instructs the node to ignore incoming HTLC
+	// cancel requests.
+	IgnoreHtlcCancellations
 )
 
 // String returns a human-readable identifier for a given Flag.
@@ -78,6 +82,8 @@ func (f Flag) String() string {
 		return "Commit"
 	case BogusSettle:
 		return "BogusSettle"
+	case IgnoreHtlcCancellations:
+		return "IgnoreHtlcCancellations"
 	default:
 		return "UnknownHodlFlag"
 	}
@@ -106,6 +112,8 @@ func (f Flag) Warning() string {
 		msg = "will not commit pending channel updates"
 	case BogusSettle:
 		msg = "will settle HTLC with bogus preimage"
+	case IgnoreHtlcCancellations:
+		msg = "will not process incoming HTLC cancel requests"
 	default:
 		msg = "incorrect hodl flag usage"
 	}
