@@ -4,6 +4,7 @@
 package signrpc
 
 import (
+	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -36,4 +37,8 @@ type Config struct {
 	// KeyRing is an interface that the signer will use to derive any keys
 	// for signing messages.
 	KeyRing keychain.SecretKeyRing
+
+	// ChanStateDB gives access to open channel state for HTLC spend info
+	// queries.
+	ChanStateDB *channeldb.ChannelStateDB
 }

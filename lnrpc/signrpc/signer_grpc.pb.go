@@ -27,6 +27,11 @@ type SignerClient interface {
 	// If we are  unable to sign using the specified keys, then an error will be
 	// returned.
 	SignOutputRaw(ctx context.Context, in *SignReq, opts ...grpc.CallOption) (*SignResp, error)
+	// GetHtlcSpendInfo returns the scripts and key material needed to spend an
+	// incoming HTLC on the remote commitment transaction with a preimage. This
+	// is intended to let a client construct and sign the HTLC-success sweep
+	// transaction.
+	GetHtlcSpendInfo(ctx context.Context, in *HtlcSpendInfoRequest, opts ...grpc.CallOption) (*HtlcSpendInfoResponse, error)
 	// ComputeInputScript generates a complete InputIndex for the passed
 	// transaction with the signature as defined within the passed SignDescriptor.
 	// This method should be capable of generating the proper input script for both
@@ -157,6 +162,15 @@ func (c *signerClient) SignOutputRaw(ctx context.Context, in *SignReq, opts ...g
 	return out, nil
 }
 
+func (c *signerClient) GetHtlcSpendInfo(ctx context.Context, in *HtlcSpendInfoRequest, opts ...grpc.CallOption) (*HtlcSpendInfoResponse, error) {
+	out := new(HtlcSpendInfoResponse)
+	err := c.cc.Invoke(ctx, "/signrpc.Signer/GetHtlcSpendInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *signerClient) ComputeInputScript(ctx context.Context, in *SignReq, opts ...grpc.CallOption) (*InputScriptResp, error) {
 	out := new(InputScriptResp)
 	err := c.cc.Invoke(ctx, "/signrpc.Signer/ComputeInputScript", in, out, opts...)
@@ -278,6 +292,11 @@ type SignerServer interface {
 	// If we are  unable to sign using the specified keys, then an error will be
 	// returned.
 	SignOutputRaw(context.Context, *SignReq) (*SignResp, error)
+	// GetHtlcSpendInfo returns the scripts and key material needed to spend an
+	// incoming HTLC on the remote commitment transaction with a preimage. This
+	// is intended to let a client construct and sign the HTLC-success sweep
+	// transaction.
+	GetHtlcSpendInfo(context.Context, *HtlcSpendInfoRequest) (*HtlcSpendInfoResponse, error)
 	// ComputeInputScript generates a complete InputIndex for the passed
 	// transaction with the signature as defined within the passed SignDescriptor.
 	// This method should be capable of generating the proper input script for both
@@ -399,6 +418,9 @@ type UnimplementedSignerServer struct {
 func (UnimplementedSignerServer) SignOutputRaw(context.Context, *SignReq) (*SignResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SignOutputRaw not implemented")
 }
+func (UnimplementedSignerServer) GetHtlcSpendInfo(context.Context, *HtlcSpendInfoRequest) (*HtlcSpendInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetHtlcSpendInfo not implemented")
+}
 func (UnimplementedSignerServer) ComputeInputScript(context.Context, *SignReq) (*InputScriptResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ComputeInputScript not implemented")
 }
@@ -462,6 +484,24 @@ func _Signer_SignOutputRaw_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SignerServer).SignOutputRaw(ctx, req.(*SignReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Signer_GetHtlcSpendInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HtlcSpendInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SignerServer).GetHtlcSpendInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/signrpc.Signer/GetHtlcSpendInfo",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SignerServer).GetHtlcSpendInfo(ctx, req.(*HtlcSpendInfoRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -692,6 +732,10 @@ var Signer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SignOutputRaw",
 			Handler:    _Signer_SignOutputRaw_Handler,
+		},
+		{
+			MethodName: "GetHtlcSpendInfo",
+			Handler:    _Signer_GetHtlcSpendInfo_Handler,
 		},
 		{
 			MethodName: "ComputeInputScript",

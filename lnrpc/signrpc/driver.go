@@ -48,6 +48,9 @@ func createNewSubServer(configRegistry lnrpc.SubServerConfigDispatcher) (
 	case config.Signer == nil:
 		return nil, nil, fmt.Errorf("Signer must be set to create " +
 			"Signrpc")
+	case config.ChanStateDB == nil:
+		return nil, nil, fmt.Errorf("ChanStateDB must be set to create " +
+			"Signrpc")
 	}
 
 	return New(config)

@@ -46,6 +46,31 @@ func RegisterSignerJSONCallbacks(registry map[string]func(ctx context.Context,
 		callback(string(respBytes), nil)
 	}
 
+	registry["signrpc.Signer.GetHtlcSpendInfo"] = func(ctx context.Context,
+		conn *grpc.ClientConn, reqJSON string, callback func(string, error)) {
+
+		req := &HtlcSpendInfoRequest{}
+		err := marshaler.Unmarshal([]byte(reqJSON), req)
+		if err != nil {
+			callback("", err)
+			return
+		}
+
+		client := NewSignerClient(conn)
+		resp, err := client.GetHtlcSpendInfo(ctx, req)
+		if err != nil {
+			callback("", err)
+			return
+		}
+
+		respBytes, err := marshaler.Marshal(resp)
+		if err != nil {
+			callback("", err)
+			return
+		}
+		callback(string(respBytes), nil)
+	}
+
 	registry["signrpc.Signer.ComputeInputScript"] = func(ctx context.Context,
 		conn *grpc.ClientConn, reqJSON string, callback func(string, error)) {
 

@@ -18,9 +18,12 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -57,6 +60,10 @@ var (
 		"/signrpc.Signer/SignOutputRaw": {{
 			Entity: "signer",
 			Action: "generate",
+		}},
+		"/signrpc.Signer/GetHtlcSpendInfo": {{
+			Entity: "signer",
+			Action: "read",
 		}},
 		"/signrpc.Signer/ComputeInputScript": {{
 			Entity: "signer",
@@ -491,6 +498,118 @@ func (s *Server) SignOutputRaw(_ context.Context, in *SignReq) (*SignResp,
 		}
 
 		resp.RawSigs[i] = sig.Serialize()
+	}
+
+	return resp, nil
+}
+
+// GetHtlcSpendInfo returns the scripts and key material needed to spend an
+// incoming HTLC on the remote commitment using a preimage. Currently supports
+// segwit v0 channels only.
+func (s *Server) GetHtlcSpendInfo(_ context.Context,
+	in *HtlcSpendInfoRequest) (*HtlcSpendInfoResponse, error) {
+
+	if in == nil {
+		return nil, fmt.Errorf("request must be set")
+	}
+
+	if in.Incoming == false {
+		return nil, fmt.Errorf("only incoming HTLCs are supported")
+	}
+
+	if in.ChanPoint == nil {
+		return nil, fmt.Errorf("chan_point must be set")
+	}
+
+	op := wire.OutPoint{
+		Index: in.ChanPoint.OutputIndex,
+	}
+	hash, err := lnrpc.GetChanPointFundingTxid(in.ChanPoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid chan_point: %w", err)
+	}
+	op.Hash = *hash
+
+	chanState, err := s.cfg.ChanStateDB.FetchChannel(op)
+	if err != nil {
+		return nil, fmt.Errorf("fetch channel: %w", err)
+	}
+
+	// We only support remote commitment HTLCs offered to us (Incoming).
+	remoteCommit := chanState.RemoteCommitment
+	var targetHtlc *channeldb.HTLC
+	for i := range remoteCommit.Htlcs {
+		htlc := remoteCommit.Htlcs[i]
+		if htlc.HtlcIndex == in.HtlcId && htlc.Incoming {
+			targetHtlc = &htlc
+			break
+		}
+	}
+	if targetHtlc == nil {
+		return nil, fmt.Errorf("incoming HTLC %d not found on remote "+
+			"commitment", in.HtlcId)
+	}
+
+	chanType := chanState.ChanType
+	if chanType.IsTaproot() {
+		return nil, fmt.Errorf("taproot HTLC spend info not yet supported")
+	}
+
+	if chanState.RemoteCurrentRevocation == nil {
+		return nil, fmt.Errorf("missing remote commit point")
+	}
+
+	commitKeys := lnwallet.DeriveCommitmentKeys(
+		chanState.RemoteCurrentRevocation, lntypes.Remote,
+		chanType, &chanState.LocalChanCfg, &chanState.RemoteChanCfg,
+	)
+
+	confirmedSpend := chanType.HasAnchors()
+
+	// For incoming HTLC on remote commit, use the sender script.
+	witnessScript, err := input.SenderHTLCScript(
+		commitKeys.RemoteHtlcKey, commitKeys.LocalHtlcKey,
+		commitKeys.RevocationKey, targetHtlc.RHash[:], confirmedSpend,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build HTLC script: %w", err)
+	}
+
+	pkScript, err := input.WitnessScriptHash(witnessScript)
+	if err != nil {
+		return nil, fmt.Errorf("pk_script: %w", err)
+	}
+
+	resp := &HtlcSpendInfoResponse{
+		OutputValueSat: int64(targetHtlc.Amt.ToSatoshis()),
+		HtlcPkScript:   pkScript,
+		WitnessScript:  witnessScript,
+		SingleTweak:    commitKeys.LocalHtlcKeyTweak,
+		KeyDesc: &KeyDescriptor{
+			RawKeyBytes: commitKeys.LocalHtlcKey.SerializeCompressed(),
+			KeyLoc: &KeyLocator{
+				KeyFamily: int32(chanState.LocalChanCfg.HtlcBasePoint.Family),
+				KeyIndex:  int32(chanState.LocalChanCfg.HtlcBasePoint.Index),
+			},
+		},
+		Sighash:    uint32(txscript.SigHashAll),
+		SignMethod: SignMethod_SIGN_METHOD_WITNESS_V0,
+		Taproot:    false,
+	}
+
+	// Attach the HTLC outpoint from the remote commitment.
+	if remoteCommit.CommitTx != nil {
+		txHash := remoteCommit.CommitTx.TxHash()
+		for idx, txOut := range remoteCommit.CommitTx.TxOut {
+			if bytes.Equal(txOut.PkScript, pkScript) {
+				resp.HtlcOutpoint = &lnrpc.OutPoint{
+					TxidBytes:   txHash[:],
+					TxidStr:     txHash.String(),
+					OutputIndex: uint32(idx),
+				}
+				break
+			}
+		}
 	}
 
 	return resp, nil

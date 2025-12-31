@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package signrpc;
 
+import "lightning.proto";
+
 option go_package = "github.com/lightningnetwork/lnd/lnrpc/signrpc";
 
 // Signer is a service that gives access to the signing functionality of the
@@ -18,6 +20,14 @@ service Signer {
     returned.
     */
     rpc SignOutputRaw (SignReq) returns (SignResp);
+
+    /*
+    GetHtlcSpendInfo returns the scripts and key material needed to spend an
+    incoming HTLC on the remote commitment transaction with a preimage. This
+    is intended to let a client construct and sign the HTLC-success sweep
+    transaction.
+    */
+    rpc GetHtlcSpendInfo (HtlcSpendInfoRequest) returns (HtlcSpendInfoResponse);
 
     /*
     ComputeInputScript generates a complete InputIndex for the passed
@@ -307,6 +317,49 @@ message SignDescriptor {
     clients.
     */
     SignMethod sign_method = 9;
+}
+
+message HtlcSpendInfoRequest {
+    // Channel that contains the HTLC.
+    lnrpc.ChannelPoint chan_point = 1;
+
+    // HTLC ID (HtlcIndex) on the remote commitment to fetch info for.
+    uint64 htlc_id = 2;
+
+    // The HTLC must be incoming (offered by the remote party). Defaults true.
+    bool incoming = 3;
+}
+
+message HtlcSpendInfoResponse {
+    // Output value of the HTLC in satoshis.
+    int64 output_value_sat = 1;
+
+    // PkScript of the HTLC output.
+    bytes htlc_pk_script = 2;
+
+    // Witness script for the HTLC success path (segwit v0).
+    bytes witness_script = 3;
+
+    // Control block for taproot spends (empty for segwit v0).
+    bytes control_block = 4;
+
+    // Single tweak for the HTLC key (segwit v0).
+    bytes single_tweak = 5;
+
+    // Key descriptor used to sign.
+    KeyDescriptor key_desc = 6;
+
+    // Sighash to use.
+    uint32 sighash = 7;
+
+    // Sign method to use with SignOutputRaw.
+    SignMethod sign_method = 8;
+
+    // True if the HTLC output is taproot.
+    bool taproot = 9;
+
+    // The outpoint of the HTLC on the remote commitment transaction.
+    lnrpc.OutPoint htlc_outpoint = 10;
 }
 
 message SignReq {
