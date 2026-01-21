@@ -409,6 +409,10 @@ type LightningClient interface {
 	// lncli: `sendcustom`
 	// SendCustomMessage sends a custom peer message.
 	SendCustomMessage(ctx context.Context, in *SendCustomMessageRequest, opts ...grpc.CallOption) (*SendCustomMessageResponse, error)
+	// lncli: `sendchanann`
+	// SendChannelAnnouncement sends a channel announcement (and any available
+	// channel updates) directly to a peer.
+	SendChannelAnnouncement(ctx context.Context, in *SendChannelAnnouncementRequest, opts ...grpc.CallOption) (*SendChannelAnnouncementResponse, error)
 	// lncli: `subscribecustom`
 	// SubscribeCustomMessages subscribes to a stream of incoming custom peer
 	// messages.
@@ -1312,6 +1316,15 @@ func (c *lightningClient) SendCustomMessage(ctx context.Context, in *SendCustomM
 	return out, nil
 }
 
+func (c *lightningClient) SendChannelAnnouncement(ctx context.Context, in *SendChannelAnnouncementRequest, opts ...grpc.CallOption) (*SendChannelAnnouncementResponse, error) {
+	out := new(SendChannelAnnouncementResponse)
+	err := c.cc.Invoke(ctx, "/lnrpc.Lightning/SendChannelAnnouncement", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *lightningClient) SubscribeCustomMessages(ctx context.Context, in *SubscribeCustomMessagesRequest, opts ...grpc.CallOption) (Lightning_SubscribeCustomMessagesClient, error) {
 	stream, err := c.cc.NewStream(ctx, &Lightning_ServiceDesc.Streams[12], "/lnrpc.Lightning/SubscribeCustomMessages", opts...)
 	if err != nil {
@@ -1798,6 +1811,10 @@ type LightningServer interface {
 	// lncli: `sendcustom`
 	// SendCustomMessage sends a custom peer message.
 	SendCustomMessage(context.Context, *SendCustomMessageRequest) (*SendCustomMessageResponse, error)
+	// lncli: `sendchanann`
+	// SendChannelAnnouncement sends a channel announcement (and any available
+	// channel updates) directly to a peer.
+	SendChannelAnnouncement(context.Context, *SendChannelAnnouncementRequest) (*SendChannelAnnouncementResponse, error)
 	// lncli: `subscribecustom`
 	// SubscribeCustomMessages subscribes to a stream of incoming custom peer
 	// messages.
@@ -2025,6 +2042,9 @@ func (UnimplementedLightningServer) RegisterRPCMiddleware(Lightning_RegisterRPCM
 }
 func (UnimplementedLightningServer) SendCustomMessage(context.Context, *SendCustomMessageRequest) (*SendCustomMessageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendCustomMessage not implemented")
+}
+func (UnimplementedLightningServer) SendChannelAnnouncement(context.Context, *SendChannelAnnouncementRequest) (*SendChannelAnnouncementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendChannelAnnouncement not implemented")
 }
 func (UnimplementedLightningServer) SubscribeCustomMessages(*SubscribeCustomMessagesRequest, Lightning_SubscribeCustomMessagesServer) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeCustomMessages not implemented")
@@ -3298,6 +3318,24 @@ func _Lightning_SendCustomMessage_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Lightning_SendChannelAnnouncement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendChannelAnnouncementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LightningServer).SendChannelAnnouncement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/lnrpc.Lightning/SendChannelAnnouncement",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LightningServer).SendChannelAnnouncement(ctx, req.(*SendChannelAnnouncementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Lightning_SubscribeCustomMessages_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(SubscribeCustomMessagesRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -3616,6 +3654,10 @@ var Lightning_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendCustomMessage",
 			Handler:    _Lightning_SendCustomMessage_Handler,
+		},
+		{
+			MethodName: "SendChannelAnnouncement",
+			Handler:    _Lightning_SendChannelAnnouncement_Handler,
 		},
 		{
 			MethodName: "SendOnionMessage",

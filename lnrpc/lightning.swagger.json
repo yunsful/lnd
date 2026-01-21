@@ -102,6 +102,39 @@
         ]
       }
     },
+    "/v1/channel/announcement": {
+      "post": {
+        "summary": "lncli: `sendchanann`\nSendChannelAnnouncement sends a channel announcement (and any available\nchannel updates) directly to a peer.",
+        "operationId": "Lightning_SendChannelAnnouncement",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/lnrpcSendChannelAnnouncementResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/lnrpcSendChannelAnnouncementRequest"
+            }
+          }
+        ],
+        "tags": [
+          "Lightning"
+        ]
+      }
+    },
     "/v1/channels": {
       "get": {
         "summary": "lncli: `listchannels`\nListChannels returns a description of all the open channels that this node\nis a participant in.",
@@ -7524,6 +7557,34 @@
         "inbound_fee_rate_milli_msat": {
           "type": "integer",
           "format": "int32"
+        }
+      }
+    },
+    "lnrpcSendChannelAnnouncementRequest": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "type": "string",
+          "format": "byte",
+          "description": "Peer to which the announcement will be sent. Represented as a\nbyte-encoded public key."
+        },
+        "chan_id": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The unique channel ID for the channel. The first 3 bytes are the block\nheight, the next 3 the index within the block, and the last 2 bytes are the\noutput index for the channel."
+        },
+        "chan_point": {
+          "type": "string",
+          "description": "The channel point in format funding_txid:output_index. If chan_id is\nspecified, this field is ignored."
+        }
+      }
+    },
+    "lnrpcSendChannelAnnouncementResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "The status of the send operation."
         }
       }
     },

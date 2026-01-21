@@ -77,7 +77,7 @@ func WriteOutpoint(w io.Writer, o *wire.OutPoint) error {
 const (
 	// MinBtcRemoteDelay is the minimum CSV delay we will require the remote
 	// to use for its commitment transaction.
-	MinBtcRemoteDelay uint16 = 144
+	MinBtcRemoteDelay uint16 = 6
 
 	// MaxBtcRemoteDelay is the maximum CSV delay we will require the remote
 	// to use for its commitment transaction.
@@ -85,7 +85,7 @@ const (
 
 	// MinChanFundingSize is the smallest channel that we'll allow to be
 	// created over the RPC interface.
-	MinChanFundingSize = btcutil.Amount(20000)
+	MinChanFundingSize = btcutil.Amount(10000)
 
 	// MaxBtcFundingAmount is a soft-limit of the maximum channel size
 	// currently accepted on the Bitcoin chain within the Lightning
@@ -3764,7 +3764,7 @@ func (f *Manager) addToGraph(completeChan *channeldb.OpenChannel,
 }
 
 // annAfterSixConfs broadcasts the necessary channel announcement messages to
-// the network after 6 confs. Should be called after the channelReady message
+// the network after confirmations. Should be called after the channelReady message
 // is sent and the channel is added to the graph (channelState is
 // 'addedToGraph') and the channel is ready to be used. This is the last
 // step in the channel opening process, and the opening state will be deleted
@@ -3807,10 +3807,10 @@ func (f *Manager) annAfterSixConfs(completeChan *channeldb.OpenChannel,
 		}
 	} else {
 		// Otherwise, we'll wait until the funding transaction has
-		// reached 6 confirmations before announcing it.
+		// reached the required confirmations before announcing it.
 		numConfs := uint32(completeChan.NumConfsRequired)
-		if numConfs < 6 {
-			numConfs = 6
+		if numConfs < 1 {
+			numConfs = 1
 		}
 		txid := completeChan.FundingOutpoint.Hash
 		log.Debugf("Will announce channel %v after ChannelPoint"+

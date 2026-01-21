@@ -601,6 +601,7 @@ func DefaultConfig() Config {
 			BaseFee:       chainreg.DefaultBitcoinBaseFeeMSat,
 			FeeRate:       chainreg.DefaultBitcoinFeeRate,
 			TimeLockDelta: chainreg.DefaultBitcoinTimeLockDelta,
+			DefaultNumChanConfs: 1,
 			MaxLocalDelay: defaultMaxLocalCSVDelay,
 			Node:          btcdBackendName,
 		},

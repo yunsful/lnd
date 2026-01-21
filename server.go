@@ -1501,7 +1501,7 @@ func newServer(ctx context.Context, cfg *Config, listenAddrs []net.Addr,
 				return defaultConf
 			}
 
-			minConf := uint64(3)
+			minConf := uint64(1)
 			maxConf := uint64(6)
 
 			// If this is a wumbo channel, then we'll require the
@@ -5313,6 +5313,194 @@ func (s *server) SendCustomMessage(ctx context.Context, peerPub [33]byte,
 	// Send the message as low-priority. For now we assume that all
 	// application-defined message are low priority.
 	return peer.SendMessageLazy(true, msg)
+}
+
+// SendChannelAnnouncement sends a channel announcement (and any available
+// channel updates) directly to a peer.
+func (s *server) SendChannelAnnouncement(ctx context.Context,
+	peerPub [33]byte, chanID uint64, chanPoint *wire.OutPoint) error {
+
+	peer, err := s.FindPeerByPubStr(string(peerPub[:]))
+	if err != nil {
+		return err
+	}
+
+	// We'll wait until the peer is active, but also listen for
+	// cancellation.
+	select {
+	case <-peer.ActiveSignal():
+	case <-peer.QuitSignal():
+		return fmt.Errorf("peer %x disconnected", peerPub)
+	case <-s.quit:
+		return ErrServerShuttingDown
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	var (
+		edgeInfo     *models.ChannelEdgeInfo
+		edge1, edge2 *models.ChannelEdgePolicy
+	)
+
+	switch {
+	case chanID != 0:
+		edgeInfo, edge1, edge2, err = s.graphDB.FetchChannelEdgesByID(
+			chanID,
+		)
+	case chanPoint != nil:
+		edgeInfo, edge1, edge2, err = s.graphDB.FetchChannelEdgesByOutpoint(
+			chanPoint,
+		)
+	default:
+		return fmt.Errorf("specify either chan_id or chan_point")
+	}
+	if err != nil {
+		return err
+	}
+
+	shortChanID := lnwire.NewShortChanIDFromInt(edgeInfo.ChannelID)
+
+	if edgeInfo.AuthProof == nil {
+		channel, err := s.chanStateDB.FetchChannel(
+			edgeInfo.ChannelPoint,
+		)
+		if err != nil {
+			return err
+		}
+
+		if channel.IdentityPub == nil {
+			return fmt.Errorf("channel=%v missing remote identity "+
+				"key", shortChanID)
+		}
+
+		proof, err := s.localAnnounceSignatures(
+			edgeInfo, channel, shortChanID,
+		)
+		if err != nil {
+			return err
+		}
+
+		return peer.SendMessage(true, proof)
+	}
+
+	if edgeInfo.Features == nil {
+		edgeCopy := *edgeInfo
+		edgeCopy.Features = lnwire.EmptyFeatureVector()
+		edgeInfo = &edgeCopy
+	}
+
+	chanAnn, edge1Ann, edge2Ann, err := netann.CreateChanAnnouncement(
+		edgeInfo.AuthProof, edgeInfo, edge1, edge2,
+	)
+	if err != nil {
+		return err
+	}
+
+	msgs := []lnwire.Message{chanAnn}
+	if edge1Ann != nil {
+		msgs = append(msgs, edge1Ann)
+	}
+	if edge2Ann != nil {
+		msgs = append(msgs, edge2Ann)
+	}
+
+	return peer.SendMessage(true, msgs...)
+}
+
+func (s *server) localAnnounceSignatures(info *models.ChannelEdgeInfo,
+	channel *channeldb.OpenChannel,
+	shortChanID lnwire.ShortChannelID) (*lnwire.AnnounceSignatures1, error) {
+
+	localPubKey := s.identityECDH.PubKey()
+	remotePubKey := channel.IdentityPub
+	if remotePubKey == nil {
+		return nil, fmt.Errorf("missing remote identity key")
+	}
+
+	localFundingKey := channel.LocalChanCfg.MultiSigKey
+	if localFundingKey.PubKey == nil {
+		return nil, fmt.Errorf("missing local funding key")
+	}
+	remoteFundingKey := channel.RemoteChanCfg.MultiSigKey.PubKey
+	if remoteFundingKey == nil {
+		return nil, fmt.Errorf("missing remote funding key")
+	}
+
+	features := lnwire.NewRawFeatureVector()
+	if info.Features != nil && info.Features.RawFeatureVector != nil {
+		features = info.Features.RawFeatureVector
+	} else if channel.ChanType.IsTaproot() {
+		features.Set(lnwire.SimpleTaprootChannelsRequiredStaging)
+	}
+
+	chanAnn := &lnwire.ChannelAnnouncement1{
+		ShortChannelID:  shortChanID,
+		Features:        features,
+		ChainHash:       channel.ChainHash,
+		ExtraOpaqueData: info.ExtraOpaqueData,
+	}
+
+	selfBytes := localPubKey.SerializeCompressed()
+	remoteBytes := remotePubKey.SerializeCompressed()
+	if bytes.Compare(selfBytes, remoteBytes) == -1 {
+		copy(chanAnn.NodeID1[:], selfBytes)
+		copy(chanAnn.NodeID2[:], remoteBytes)
+		copy(
+			chanAnn.BitcoinKey1[:],
+			localFundingKey.PubKey.SerializeCompressed(),
+		)
+		copy(
+			chanAnn.BitcoinKey2[:],
+			remoteFundingKey.SerializeCompressed(),
+		)
+	} else {
+		copy(chanAnn.NodeID1[:], remoteBytes)
+		copy(chanAnn.NodeID2[:], selfBytes)
+		copy(
+			chanAnn.BitcoinKey1[:],
+			remoteFundingKey.SerializeCompressed(),
+		)
+		copy(
+			chanAnn.BitcoinKey2[:],
+			localFundingKey.PubKey.SerializeCompressed(),
+		)
+	}
+
+	chanAnnMsg, err := chanAnn.DataToSign()
+	if err != nil {
+		return nil, err
+	}
+
+	nodeSig, err := s.cc.MsgSigner.SignMessage(
+		s.identityKeyLoc, chanAnnMsg, true,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to sign node key: %w", err)
+	}
+	bitcoinSig, err := s.cc.MsgSigner.SignMessage(
+		localFundingKey.KeyLocator, chanAnnMsg, true,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to sign funding key: %w",
+			err)
+	}
+
+	proof := &lnwire.AnnounceSignatures1{
+		ChannelID: lnwire.NewChanIDFromOutPoint(
+			channel.FundingOutpoint,
+		),
+		ShortChannelID: shortChanID,
+	}
+	proof.NodeSignature, err = lnwire.NewSigFromSignature(nodeSig)
+	if err != nil {
+		return nil, err
+	}
+	proof.BitcoinSignature, err = lnwire.NewSigFromSignature(bitcoinSig)
+	if err != nil {
+		return nil, err
+	}
+
+	return proof, nil
 }
 
 // SendOnionMessage sends a custom message to the peer with the specified

@@ -165,6 +165,9 @@ http:
     - selector: lnrpc.Lightning.SendCustomMessage
       post: "/v1/custommessage"
       body: "*"
+    - selector: lnrpc.Lightning.SendChannelAnnouncement
+      post: "/v1/channel/announcement"
+      body: "*"
     - selector: lnrpc.Lightning.SubscribeCustomMessages
       get: "/v1/custommessage/subscribe"
     - selector: lnrpc.Lightning.SendOnionMessage

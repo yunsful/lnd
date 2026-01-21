@@ -44,7 +44,7 @@ const (
 	// wallet in case we have to fee bump anchor channels on force close.
 	// TODO(halseth): update constant to target a specific commit size at
 	// set fee rate.
-	AnchorChanReservedValue = btcutil.Amount(10_000)
+	AnchorChanReservedValue = btcutil.Amount(1_000)
 
 	// MaxAnchorChanReservedValue is the maximum value we'll reserve for
 	// anchor channel fee bumping. We cap it at 10 times the per-channel

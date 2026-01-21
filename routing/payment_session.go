@@ -16,7 +16,7 @@ import (
 
 // BlockPadding is used to increment the finalCltvDelta value for the last hop
 // to prevent an HTLC being failed if some blocks are mined while it's in-flight.
-const BlockPadding uint16 = 3
+const BlockPadding uint16 = 0
 
 // ValidateCLTVLimit is a helper function that validates that the cltv limit is
 // greater than the final cltv delta parameter, optionally including the

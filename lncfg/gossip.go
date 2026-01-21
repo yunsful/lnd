@@ -18,7 +18,7 @@ import (
 // decide which channels to be included in its local graph, more details can be
 // found:
 // - https://github.com/lightning/bolts/pull/1215#issuecomment-2557337202
-const minAnnouncementConf = 3
+const minAnnouncementConf = 1
 
 //nolint:ll
 type Gossip struct {

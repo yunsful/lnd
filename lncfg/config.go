@@ -28,25 +28,17 @@ const (
 
 	// DefaultFinalCltvRejectDelta defines the number of blocks before the
 	// expiry of an incoming exit hop htlc at which we cancel it back
-	// immediately. It is an extra safety measure over the final cltv
-	// requirement as it is defined in the invoice. It ensures that we
-	// cancel back htlcs that, when held on to, may cause us to force close
-	// the channel because we enter the incoming broadcast window. Bolt #11
-	// suggests 9 blocks here. We use a few more for additional safety.
-	//
-	// There is still a small gap that remains between receiving the
-	// RevokeAndAck and canceling back. If a new block arrives within that
-	// window, we may still force close the channel. There is currently no
-	// way to reject an UpdateAddHtlc of which we already know that it will
-	// push us in the broadcast window.
-	DefaultFinalCltvRejectDelta = DefaultIncomingBroadcastDelta + 3
+	// immediately. The default is lowered to support custom very small
+	// final CLTV deltas (for example 3 blocks) instead of the BOLT #11
+	// guidance of ~9–12 blocks.
+	DefaultFinalCltvRejectDelta = 1
 
 	// DefaultCltvInterceptDelta defines the number of blocks before the
 	// expiry of the htlc where we don't intercept anymore. This value must
 	// be greater than CltvRejectDelta, because we don't want to offer htlcs
 	// to the interceptor client for which there is no time left to resolve
 	// them anymore.
-	DefaultCltvInterceptDelta = DefaultFinalCltvRejectDelta + 3
+	DefaultCltvInterceptDelta = DefaultFinalCltvRejectDelta + 1
 
 	// DefaultOutgoingBroadcastDelta defines the number of blocks before the
 	// expiry of an outgoing htlc at which we force close the channel. We
@@ -67,7 +59,7 @@ const (
 	// value of 0. We pad it a bit, to prevent a slow round trip to the next
 	// peer and a block arriving during that round trip to trigger force
 	// closure.
-	DefaultOutgoingCltvRejectDelta = DefaultOutgoingBroadcastDelta + 3
+	DefaultOutgoingCltvRejectDelta = DefaultOutgoingBroadcastDelta + 1
 
 	// DefaultZombieSweeperInterval is the default time interval at which
 	// unfinished (zombiestate) open channel flows are purged from memory.

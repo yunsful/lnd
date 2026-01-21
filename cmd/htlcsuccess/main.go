@@ -49,7 +49,7 @@ import (
 const (
 	defaultRPCHost      = "localhost:10009"
 	defaultTLSCert      = "/Library/Application Support/Lnd/tls.cert"
-	defaultMacaroonPath = "/Library/Application Support/Lnd/data/chain/bitcoin/regtest/admin.macaroon"
+	defaultMacaroonPath = "/Library/Application Support/Lnd/data/chain/bitcoin/mainnet/admin.macaroon"
 )
 
 // flagSlice allows repeatable string flags.

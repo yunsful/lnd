@@ -72,7 +72,7 @@ const (
 	// DefaultProofMatureDelta specifies the default value used for
 	// ProofMatureDelta, which is the number of confirmations needed before
 	// processing the announcement signatures.
-	DefaultProofMatureDelta = 6
+	DefaultProofMatureDelta = 1
 )
 
 var (

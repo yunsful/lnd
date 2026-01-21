@@ -6,7 +6,9 @@ const (
 	// cancel the invoice to prevent the channel from force closing. This
 	// value *must* be greater than DefaultIncomingBroadcastDelta to prevent
 	// force closes.
-	DefaultHoldInvoiceExpiryDelta = DefaultIncomingBroadcastDelta + 2
+	// NOTE: Lowered to 1 to allow tiny final CLTV deltas (e.g. 3) without
+	// immediate cancellation; this increases force-close risk.
+	DefaultHoldInvoiceExpiryDelta = 1
 
 	// DefaultMinNumRealBlindedPathHops is the minimum number of _real_
 	// hops to include in a blinded payment path. This doesn't include our

@@ -571,6 +571,10 @@ func MainRPCServerPermissions() map[string][]bakery.Op {
 			Entity: "offchain",
 			Action: "write",
 		}},
+		"/lnrpc.Lightning/SendChannelAnnouncement": {{
+			Entity: "offchain",
+			Action: "write",
+		}},
 		"/lnrpc.Lightning/SubscribeCustomMessages": {{
 			Entity: "offchain",
 			Action: "read",
@@ -9282,6 +9286,45 @@ func (r *rpcServer) SendCustomMessage(ctx context.Context,
 
 	return &lnrpc.SendCustomMessageResponse{
 		Status: "message sent successfully",
+	}, nil
+}
+
+// SendChannelAnnouncement sends a channel announcement to a peer.
+func (r *rpcServer) SendChannelAnnouncement(ctx context.Context,
+	req *lnrpc.SendChannelAnnouncementRequest) (
+	*lnrpc.SendChannelAnnouncementResponse, error) {
+
+	peer, err := route.NewVertexFromBytes(req.Peer)
+	if err != nil {
+		return nil, err
+	}
+
+	var chanPoint *wire.OutPoint
+	if req.ChanId == 0 && req.ChanPoint != "" {
+		chanPoint, err = wire.NewOutPointFromString(req.ChanPoint)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if req.ChanId == 0 && chanPoint == nil {
+		return nil, fmt.Errorf("specify either chan_id or chan_point")
+	}
+
+	err = r.server.SendChannelAnnouncement(
+		ctx, peer, req.ChanId, chanPoint,
+	)
+	switch {
+	case errors.Is(err, ErrPeerNotConnected):
+		return nil, status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, graphdb.ErrEdgeNotFound):
+		return nil, status.Error(codes.NotFound, err.Error())
+	case err != nil:
+		return nil, err
+	}
+
+	return &lnrpc.SendChannelAnnouncementResponse{
+		Status: "channel announcement or signatures sent successfully",
 	}, nil
 }
 
