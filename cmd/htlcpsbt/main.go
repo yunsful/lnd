@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"google.golang.org/grpc"
@@ -23,10 +27,14 @@ import (
 // finalized witness. If wallet UTXOs are present as additional inputs, it can
 // attach witness_utxo data so lnd can sign them.
 const (
-	defaultRPCHost      = "localhost:10009"
-	defaultTLSCert      = "/Library/Application Support/Lnd/tls.cert"
-	defaultMacaroonPath = "/Library/Application Support/Lnd/data/chain/bitcoin/mainnet/admin.macaroon"
+	defaultRPCHost         = "localhost:10009"
+	defaultChain           = "bitcoin"
+	defaultNetwork         = "mainnet"
+	defaultTLSCertFilename = "tls.cert"
+	defaultMacaroonName    = "admin.macaroon"
 )
+
+var defaultLndDir = btcutil.AppDataDir("lnd", false)
 
 func main() {
 	var (
@@ -37,6 +45,9 @@ func main() {
 		utxoPkHex = flag.String("utxo_pk_script", "", "wallet UTXO pk_script hex")
 
 		rpcServer = flag.String("rpcserver", defaultRPCHost, "lnd gRPC host:port")
+		lndDir    = flag.String("lnddir", defaultLndDir, "path to lnd base directory")
+		chain     = flag.String("chain", defaultChain, "chain for default macaroon path")
+		network   = flag.String("network", defaultNetwork, "network for default macaroon path")
 		tlsPath   = flag.String("tlscert", "", "path to lnd tls.cert")
 		macPath   = flag.String("macaroon", "", "path to admin macaroon")
 	)
@@ -111,18 +122,11 @@ func main() {
 		}
 
 		if needsLookup {
-			if *tlsPath == "" || *macPath == "" {
-				homeDir, err := os.UserHomeDir()
-				if err != nil {
-					fail("unable to detect home dir: %v", err)
-				}
-				base := filepath.Join(homeDir, "")
-				if *tlsPath == "" {
-					*tlsPath = filepath.Join(base, defaultTLSCert)
-				}
-				if *macPath == "" {
-					*macPath = filepath.Join(base, defaultMacaroonPath)
-				}
+			if *tlsPath == "" {
+				*tlsPath = defaultTLSCertPath(*lndDir)
+			}
+			if *macPath == "" {
+				*macPath = defaultMacaroonPath(*lndDir, *chain, *network)
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -168,6 +172,69 @@ func main() {
 func fail(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+type flagSlice []string
+
+func (s *flagSlice) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *flagSlice) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+func parseInputUtxo(s string) (int, *wire.TxOut, error) {
+	parts := strings.Split(s, ":")
+	if len(parts) != 3 {
+		return 0, nil, fmt.Errorf("format index:value:pk_script_hex")
+	}
+
+	idx, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, nil, fmt.Errorf("invalid index: %w", err)
+	}
+	value, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, nil, fmt.Errorf("invalid value: %w", err)
+	}
+	if value <= 0 {
+		return 0, nil, fmt.Errorf("value must be > 0")
+	}
+	pkScript, err := hex.DecodeString(parts[2])
+	if err != nil {
+		return 0, nil, fmt.Errorf("invalid pk_script: %w", err)
+	}
+	if len(pkScript) == 0 {
+		return 0, nil, fmt.Errorf("pk_script required")
+	}
+
+	return idx, &wire.TxOut{
+		Value:    value,
+		PkScript: pkScript,
+	}, nil
+}
+
+func defaultTLSCertPath(lndDir string) string {
+	return filepath.Join(lndDir, defaultTLSCertFilename)
+}
+
+func defaultMacaroonPath(lndDir, chain, network string) string {
+	chain = strings.ToLower(strings.TrimSpace(chain))
+	if chain == "" {
+		chain = defaultChain
+	}
+
+	network = strings.ToLower(strings.TrimSpace(network))
+	if network == "" {
+		network = defaultNetwork
+	}
+	network = lncfg.NormalizeNetwork(network)
+
+	return filepath.Join(
+		lndDir, "data", "chain", chain, network, defaultMacaroonName,
+	)
 }
 
 type walletUtxo struct {

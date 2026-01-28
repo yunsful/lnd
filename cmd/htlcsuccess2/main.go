@@ -18,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -31,10 +32,14 @@ import (
 // Signer RPC and combined with the sender signature. Optional extra inputs and
 // outputs are allowed only when sighash is SINGLE|ANYONECANPAY (anchor HTLCs).
 const (
-	defaultRPCHost      = "localhost:10009"
-	defaultTLSCert      = "/Library/Application Support/Lnd/tls.cert"
-	defaultMacaroonPath = "/Library/Application Support/Lnd/data/chain/bitcoin/mainnet/admin.macaroon"
+	defaultRPCHost         = "localhost:10009"
+	defaultChain           = "bitcoin"
+	defaultNetwork         = "mainnet"
+	defaultTLSCertFilename = "tls.cert"
+	defaultMacaroonName    = "admin.macaroon"
 )
+
+var defaultLndDir = btcutil.AppDataDir("lnd", false)
 
 // flagSlice allows repeatable string flags.
 type flagSlice []string
@@ -56,9 +61,11 @@ type additionalInput struct {
 func main() {
 	var (
 		rpcServer = flag.String("rpcserver", defaultRPCHost, "lnd gRPC host:port")
+		lndDir    = flag.String("lnddir", defaultLndDir, "path to lnd base directory")
+		chain     = flag.String("chain", defaultChain, "chain for default macaroon path")
+		network   = flag.String("network", defaultNetwork, "network for address decoding")
 		tlsPath   = flag.String("tlscert", "", "path to lnd tls.cert")
 		macPath   = flag.String("macaroon", "", "path to admin macaroon")
-		network   = flag.String("network", "mainnet", "network for address decoding")
 
 		outpointStr      = flag.String("outpoint", "", "HTLC outpoint <txid>:<index>")
 		outputValueSat   = flag.Int64("output_value_sat", 0, "value of the HTLC output in satoshis")
@@ -96,7 +103,8 @@ func main() {
 	flag.Parse()
 
 	if err := run(
-		*rpcServer, *tlsPath, *macPath, *network, *outpointStr, *outputValueSat,
+		*rpcServer, *tlsPath, *macPath, *lndDir, *chain, *network,
+		*outpointStr, *outputValueSat,
 		*htlcPkScriptHex, *witnessScriptHex, *controlBlockHex,
 		*preimageHex, *senderSigHex, *sighashStr, *senderSighashStr,
 		*htlcSequence, *secondLevelPkHex, *secondLevelValueSat, *keyFamily,
@@ -108,8 +116,9 @@ func main() {
 	}
 }
 
-func run(rpcServer, tlsPath, macPath, network, outpointStr string, outputValueSat int64,
-	htlcPkScriptHex, witnessScriptHex, controlBlockHex, preimageHex,
+func run(rpcServer, tlsPath, macPath, lndDir, chain, network, outpointStr string,
+	outputValueSat int64, htlcPkScriptHex, witnessScriptHex,
+	controlBlockHex, preimageHex,
 	senderSigHex, sighashStr, senderSighashStr string, htlcSequence int,
 	secondLevelPkHex string, secondLevelValueSat int64, keyFamily, keyIndex int,
 	singleTweakHex string, taproot bool, inputsJSON, outputsJSON string,
@@ -280,18 +289,11 @@ func run(rpcServer, tlsPath, macPath, network, outpointStr string, outputValueSa
 		seq = 1
 	}
 
-	if tlsPath == "" || macPath == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("unable to detect home dir: %w", err)
-		}
-		base := filepath.Join(homeDir, "")
-		if tlsPath == "" {
-			tlsPath = filepath.Join(base, defaultTLSCert)
-		}
-		if macPath == "" {
-			macPath = filepath.Join(base, defaultMacaroonPath)
-		}
+	if tlsPath == "" {
+		tlsPath = defaultTLSCertPath(lndDir)
+	}
+	if macPath == "" {
+		macPath = defaultMacaroonPath(lndDir, chain, network)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -589,6 +591,27 @@ func parseExtraOutput(s string) (*wire.TxOut, error) {
 		Value:    val,
 		PkScript: pkScript,
 	}, nil
+}
+
+func defaultTLSCertPath(lndDir string) string {
+	return filepath.Join(lndDir, defaultTLSCertFilename)
+}
+
+func defaultMacaroonPath(lndDir, chain, network string) string {
+	chain = strings.ToLower(strings.TrimSpace(chain))
+	if chain == "" {
+		chain = defaultChain
+	}
+
+	network = strings.ToLower(strings.TrimSpace(network))
+	if network == "" {
+		network = defaultNetwork
+	}
+	network = lncfg.NormalizeNetwork(network)
+
+	return filepath.Join(
+		lndDir, "data", "chain", chain, network, defaultMacaroonName,
+	)
 }
 
 func buildOpReturnOutput(dataHex string) (*wire.TxOut, error) {
@@ -948,12 +971,16 @@ func networkParams(network string) (*chaincfg.Params, error) {
 	switch strings.ToLower(network) {
 	case "mainnet", "main":
 		return &chaincfg.MainNetParams, nil
-	case "testnet", "testnet3", "testnet4":
+	case "testnet", "testnet3":
 		return &chaincfg.TestNet3Params, nil
+	case "testnet4":
+		return &chaincfg.TestNet4Params, nil
 	case "regtest", "regression":
 		return &chaincfg.RegressionNetParams, nil
 	case "simnet":
 		return &chaincfg.SimNetParams, nil
+	case "signet":
+		return &chaincfg.SigNetParams, nil
 	default:
 		return nil, fmt.Errorf("unknown network %q", network)
 	}
