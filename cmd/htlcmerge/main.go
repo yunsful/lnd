@@ -6,9 +6,25 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/btcsuite/btcd/wire"
 )
+
+type intSlice []int
+
+func (s *intSlice) String() string {
+	return fmt.Sprint([]int(*s))
+}
+
+func (s *intSlice) Set(v string) error {
+	idx, err := strconv.Atoi(v)
+	if err != nil {
+		return err
+	}
+	*s = append(*s, idx)
+	return nil
+}
 
 // htlcmerge copies a pre-built witness from a raw transaction into a finalized
 // transaction (e.g. after lnd signs additional inputs) to produce a final hex.
@@ -17,6 +33,8 @@ func main() {
 	rawHex := flag.String("raw_tx", "", "raw transaction hex (with HTLC witness)")
 	finalHex := flag.String("final_tx", "", "final transaction hex (with other inputs signed)")
 	htlcIdx := flag.Int("htlc_input_index", 0, "index of the HTLC input whose witness should be preserved")
+	preserveIdxs := intSlice{}
+	flag.Var(&preserveIdxs, "preserve_input_index", "input index to preserve witness from raw tx (repeatable)")
 	flag.Parse()
 
 	if *rawHex == "" || *finalHex == "" {
@@ -32,12 +50,26 @@ func main() {
 		fail("parse final_tx: %v", err)
 	}
 
-	if *htlcIdx < 0 || *htlcIdx >= len(rawTx.TxIn) || *htlcIdx >= len(finalTx.TxIn) {
-		fail("htlc_input_index out of range")
+	idxSet := map[int]struct{}{}
+	if *htlcIdx >= 0 {
+		idxSet[*htlcIdx] = struct{}{}
+	}
+	for _, idx := range preserveIdxs {
+		idxSet[idx] = struct{}{}
+	}
+	if len(idxSet) == 0 {
+		fail("no input indices to preserve")
 	}
 
-	// Preserve the HTLC witness from the original raw tx.
-	finalTx.TxIn[*htlcIdx].Witness = rawTx.TxIn[*htlcIdx].Witness
+	for idx := range idxSet {
+		if idx < 0 || idx >= len(rawTx.TxIn) || idx >= len(finalTx.TxIn) {
+			fail("input index %d out of range", idx)
+		}
+		if len(rawTx.TxIn[idx].Witness) == 0 {
+			continue
+		}
+		finalTx.TxIn[idx].Witness = rawTx.TxIn[idx].Witness
+	}
 
 	merged, err := serializeTx(finalTx)
 	if err != nil {

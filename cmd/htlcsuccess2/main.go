@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -49,8 +51,18 @@ func (s *flagSlice) Set(v string) error {
 }
 
 type additionalInput struct {
-	txIn  *wire.TxIn
-	value int64
+	txIn     *wire.TxIn
+	value    int64
+	pkScript []byte
+}
+
+type taprootSigInput struct {
+	index        int
+	privKey      *btcec.PrivateKey
+	pkScript     []byte
+	tapscript    []byte
+	controlBlock []byte
+	sighash      txscript.SigHashType
 }
 
 func main() {
@@ -86,11 +98,15 @@ func main() {
 
 		extraInputs  flagSlice
 		extraOutputs flagSlice
+		inputWitness flagSlice
+		taprootSig   flagSlice
 		opReturns    flagSlice
 	)
 
 	flag.Var(&extraInputs, "add_input", "extra input as txid:vout[:sequence] or txid:vout:value:sequence")
 	flag.Var(&extraOutputs, "add_output", "extra output as value_sats:pk_script_hex")
+	flag.Var(&inputWitness, "add_input_witness", "extra input witness as index:hex,hex,... (stack items)")
+	flag.Var(&taprootSig, "add_input_taproot_sig", "auto-sign taproot input as index:privkey:pk_script:tapscript:control_block[:sighash]")
 	flag.Var(&opReturns, "add_op_return", "OP_RETURN data hex (value 0)")
 
 	flag.Parse()
@@ -101,7 +117,7 @@ func main() {
 		*preimageHex, *senderSigHex, *sighashStr, *senderSighashStr,
 		*htlcSequence, *secondLevelPkHex, *secondLevelValueSat, *keyFamily,
 		*keyIndex, *singleTweakHex, *taproot, *inputsJSON, *outputsJSON,
-		extraInputs, extraOutputs, opReturns,
+		extraInputs, extraOutputs, inputWitness, taprootSig, opReturns,
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -113,7 +129,7 @@ func run(rpcServer, tlsPath, macPath, network, outpointStr string, outputValueSa
 	senderSigHex, sighashStr, senderSighashStr string, htlcSequence int,
 	secondLevelPkHex string, secondLevelValueSat int64, keyFamily, keyIndex int,
 	singleTweakHex string, taproot bool, inputsJSON, outputsJSON string,
-	extraInputs, extraOutputs, opReturns flagSlice) error {
+	extraInputs, extraOutputs, inputWitness, taprootSig, opReturns flagSlice) error {
 
 	if outpointStr == "" || outputValueSat <= 0 || htlcPkScriptHex == "" ||
 		witnessScriptHex == "" || preimageHex == "" || senderSigHex == "" ||
@@ -267,6 +283,15 @@ func run(rpcServer, tlsPath, macPath, network, outpointStr string, outputValueSa
 	fmt.Printf("OP_RETURN outputs (flags): %d\n", len(opReturns))
 	fmt.Printf("Needs wallet lookup: %t\n", needsWalletLookup)
 
+	taprootSigInputs := make([]taprootSigInput, 0, len(taprootSig))
+	for i, sigStr := range taprootSig {
+		entry, err := parseTaprootSigInput(sigStr)
+		if err != nil {
+			return fmt.Errorf("add_input_taproot_sig %d: %w", i, err)
+		}
+		taprootSigInputs = append(taprootSigInputs, entry)
+	}
+
 	anchorSigHash := txscript.SigHashSingle | txscript.SigHashAnyOneCanPay
 	if (len(addInputs) > 0 || len(addOutputs) > 0 || len(opReturnOutputs) > 0) &&
 		(sighash != anchorSigHash || senderSigHash != anchorSigHash) {
@@ -321,6 +346,7 @@ func run(rpcServer, tlsPath, macPath, network, outpointStr string, outputValueSa
 				return fmt.Errorf("wallet utxo not found for input %s", key)
 			}
 			addInputs[i].value = utxo.value
+			addInputs[i].pkScript = utxo.pkScript
 		}
 	}
 
@@ -341,6 +367,26 @@ func run(rpcServer, tlsPath, macPath, network, outpointStr string, outputValueSa
 	}
 	for _, out := range opReturnOutputs {
 		tx.AddTxOut(out)
+	}
+
+	inputWitnesses := make(map[int]wire.TxWitness, len(inputWitness))
+	for i, witnessStr := range inputWitness {
+		idx, witness, err := parseInputWitness(witnessStr)
+		if err != nil {
+			return fmt.Errorf("add_input_witness %d: %w", i, err)
+		}
+		if idx == 0 {
+			return fmt.Errorf("add_input_witness %d: input index 0 reserved for HTLC", i)
+		}
+		if _, exists := inputWitnesses[idx]; exists {
+			return fmt.Errorf("add_input_witness %d: duplicate input index %d", i, idx)
+		}
+		inputWitnesses[idx] = witness
+	}
+	for idx := range inputWitnesses {
+		if idx < 0 || idx >= len(tx.TxIn) {
+			return fmt.Errorf("add_input_witness: input index %d out of range", idx)
+		}
 	}
 
 	signMethod := signrpc.SignMethod_SIGN_METHOD_WITNESS_V0
@@ -374,6 +420,12 @@ func run(rpcServer, tlsPath, macPath, network, outpointStr string, outputValueSa
 		return err
 	}
 	tx.TxIn[0].Witness = witness
+	for idx, wit := range inputWitnesses {
+		tx.TxIn[idx].Witness = wit
+	}
+	if err := applyTaprootSignatures(tx, *outpoint, htlcPkScript, outputValueSat, addInputs, taprootSigInputs, inputWitnesses); err != nil {
+		return err
+	}
 
 	totalInputValue := outputValueSat
 	for _, in := range addInputs {
@@ -564,6 +616,176 @@ func parseExtraInput(s string) (additionalInput, error) {
 		},
 		value: value,
 	}, nil
+}
+
+func parseTaprootSigInput(s string) (taprootSigInput, error) {
+	parts := strings.Split(s, ":")
+	if len(parts) < 5 || len(parts) > 6 {
+		return taprootSigInput{}, fmt.Errorf("format index:privkey:pk_script:tapscript:control_block[:sighash]")
+	}
+
+	idx, err := strconv.Atoi(parts[0])
+	if err != nil || idx < 0 {
+		return taprootSigInput{}, fmt.Errorf("invalid input index")
+	}
+
+	privKeyBytes, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return taprootSigInput{}, fmt.Errorf("invalid privkey: %w", err)
+	}
+	privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
+
+	pkScript, err := hex.DecodeString(parts[2])
+	if err != nil {
+		return taprootSigInput{}, fmt.Errorf("invalid pk_script: %w", err)
+	}
+
+	tapscript, err := hex.DecodeString(parts[3])
+	if err != nil {
+		return taprootSigInput{}, fmt.Errorf("invalid tapscript: %w", err)
+	}
+
+	ctrl, err := hex.DecodeString(parts[4])
+	if err != nil {
+		return taprootSigInput{}, fmt.Errorf("invalid control_block: %w", err)
+	}
+
+	sighash := txscript.SigHashDefault
+	if len(parts) == 6 {
+		sighash, err = parseSigHash(parts[5], true)
+		if err != nil {
+			return taprootSigInput{}, fmt.Errorf("invalid sighash: %w", err)
+		}
+	}
+
+	return taprootSigInput{
+		index:        idx,
+		privKey:      privKey,
+		pkScript:     pkScript,
+		tapscript:    tapscript,
+		controlBlock: ctrl,
+		sighash:      sighash,
+	}, nil
+}
+
+func parseInputWitness(s string) (int, wire.TxWitness, error) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, nil, fmt.Errorf("witness must be index:hex,hex,...")
+	}
+
+	idx, err := strconv.Atoi(parts[0])
+	if err != nil || idx < 0 {
+		return 0, nil, fmt.Errorf("invalid input index")
+	}
+
+	if parts[1] == "" {
+		return idx, wire.TxWitness{}, nil
+	}
+
+	itemStrs := strings.Split(parts[1], ",")
+	witness := make(wire.TxWitness, 0, len(itemStrs))
+	for _, item := range itemStrs {
+		if item == "" {
+			witness = append(witness, []byte{})
+			continue
+		}
+		b, err := hex.DecodeString(item)
+		if err != nil {
+			return 0, nil, fmt.Errorf("invalid witness item %q: %w", item, err)
+		}
+		witness = append(witness, b)
+	}
+
+	return idx, witness, nil
+}
+
+func applyTaprootSignatures(tx *wire.MsgTx, htlcOutpoint wire.OutPoint,
+	htlcPkScript []byte, htlcValue int64, addInputs []additionalInput,
+	sigInputs []taprootSigInput, inputWitnesses map[int]wire.TxWitness) error {
+
+	if len(sigInputs) == 0 {
+		return nil
+	}
+
+	prevOuts := txscript.NewMultiPrevOutFetcher(nil)
+	prevOuts.AddPrevOut(htlcOutpoint, &wire.TxOut{
+		Value:    htlcValue,
+		PkScript: htlcPkScript,
+	})
+
+	for i := range addInputs {
+		if addInputs[i].value <= 0 || len(addInputs[i].pkScript) == 0 {
+			continue
+		}
+		prevOuts.AddPrevOut(addInputs[i].txIn.PreviousOutPoint, &wire.TxOut{
+			Value:    addInputs[i].value,
+			PkScript: addInputs[i].pkScript,
+		})
+	}
+
+	for i, entry := range sigInputs {
+		if entry.index == 0 {
+			return fmt.Errorf("add_input_taproot_sig %d: input index 0 reserved for HTLC", i)
+		}
+		if entry.index < 0 || entry.index >= len(tx.TxIn) {
+			return fmt.Errorf("add_input_taproot_sig %d: input index %d out of range", i, entry.index)
+		}
+		if _, exists := inputWitnesses[entry.index]; exists {
+			return fmt.Errorf("add_input_taproot_sig %d: witness already set for input %d", i, entry.index)
+		}
+		addIdx := entry.index - 1
+		if addIdx < 0 || addIdx >= len(addInputs) {
+			return fmt.Errorf("add_input_taproot_sig %d: input index %d not in extra inputs", i, entry.index)
+		}
+		if addInputs[addIdx].value <= 0 {
+			return fmt.Errorf("add_input_taproot_sig %d: missing input value for index %d", i, entry.index)
+		}
+		if len(addInputs[addIdx].pkScript) == 0 {
+			addInputs[addIdx].pkScript = entry.pkScript
+			prevOuts.AddPrevOut(addInputs[addIdx].txIn.PreviousOutPoint, &wire.TxOut{
+				Value:    addInputs[addIdx].value,
+				PkScript: entry.pkScript,
+			})
+		}
+	}
+
+	sigHashes := txscript.NewTxSigHashes(tx, prevOuts)
+	for i, entry := range sigInputs {
+		if entry.sighash&txscript.SigHashAnyOneCanPay != txscript.SigHashAnyOneCanPay {
+			for idx := range tx.TxIn {
+				op := tx.TxIn[idx].PreviousOutPoint
+				if prevOuts.FetchPrevOutput(op) == nil {
+					return fmt.Errorf("missing prevout for input %d (set pk_script or use sighash anyonecanpay)", idx)
+				}
+			}
+		}
+
+		tapLeaf := txscript.NewBaseTapLeaf(entry.tapscript)
+		sigHash, err := txscript.CalcTapscriptSignaturehash(
+			sigHashes, entry.sighash, tx, entry.index, prevOuts, tapLeaf,
+		)
+		if err != nil {
+			return fmt.Errorf("add_input_taproot_sig %d: sighash: %w", i, err)
+		}
+
+		sig, err := schnorr.Sign(entry.privKey, sigHash)
+		if err != nil {
+			return fmt.Errorf("add_input_taproot_sig %d: sign: %w", i, err)
+		}
+		sigBytes := sig.Serialize()
+		if entry.sighash != txscript.SigHashDefault {
+			sigBytes = append(sigBytes, byte(entry.sighash))
+		}
+
+		tx.TxIn[entry.index].Witness = wire.TxWitness{
+			sigBytes,
+			entry.tapscript,
+			entry.controlBlock,
+		}
+	}
+
+	return nil
 }
 
 func parseExtraOutput(s string) (*wire.TxOut, error) {

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -40,6 +42,8 @@ func main() {
 		tlsPath   = flag.String("tlscert", "", "path to lnd tls.cert")
 		macPath   = flag.String("macaroon", "", "path to admin macaroon")
 	)
+	var inputUtxos flagSlice
+	flag.Var(&inputUtxos, "input_utxo", "input utxo as index:value:pk_script_hex (repeatable)")
 	flag.Parse()
 
 	if *rawTxHex == "" || *htlcValue <= 0 || *htlcPkHex == "" {
@@ -68,30 +72,48 @@ func main() {
 	}
 
 	// Copy tx without any existing witnesses/scripts.
-	unsigned := tx
+	unsigned := tx.Copy()
 	for i := range unsigned.TxIn {
 		unsigned.TxIn[i].SignatureScript = nil
 		unsigned.TxIn[i].Witness = nil
 	}
 
-	p, err := psbt.NewFromUnsignedTx(&unsigned)
+	p, err := psbt.NewFromUnsignedTx(unsigned)
 	if err != nil {
 		fail("new psbt: %v", err)
 	}
 
-	// Finalize HTLC input (index 0) with its existing witness and prev out.
-	var witBuf bytes.Buffer
-	if err := psbt.WriteTxWitness(&witBuf, tx.TxIn[0].Witness); err != nil {
-		fail("encode htlc witness: %v", err)
+	// Preserve any finalized witnesses from the raw transaction.
+	for i := range tx.TxIn {
+		if len(tx.TxIn[i].Witness) == 0 {
+			continue
+		}
+		var witBuf bytes.Buffer
+		if err := psbt.WriteTxWitness(&witBuf, tx.TxIn[i].Witness); err != nil {
+			fail("encode witness for input %d: %v", i, err)
+		}
+		p.Inputs[i].FinalScriptWitness = witBuf.Bytes()
 	}
-	p.Inputs[0].FinalScriptWitness = witBuf.Bytes()
+
+	// Provide the prev out for the HTLC input (index 0) for completeness.
 	p.Inputs[0].WitnessUtxo = &wire.TxOut{
 		Value:    *htlcValue,
 		PkScript: htlcPk,
 	}
 
 	if len(p.Inputs) > 1 {
-		if *utxoValue > 0 && *utxoPkHex != "" {
+		for _, entry := range inputUtxos {
+			idx, utxo, err := parseInputUtxo(entry)
+			if err != nil {
+				fail("input_utxo: %v", err)
+			}
+			if idx < 0 || idx >= len(p.Inputs) {
+				fail("input_utxo index out of range: %d", idx)
+			}
+			p.Inputs[idx].WitnessUtxo = utxo
+		}
+
+		if *utxoValue > 0 && *utxoPkHex != "" && p.Inputs[1].WitnessUtxo == nil {
 			utxoPk, err := hex.DecodeString(*utxoPkHex)
 			if err != nil {
 				fail("decode utxo pk_script: %v", err)
@@ -168,6 +190,48 @@ func main() {
 func fail(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+type flagSlice []string
+
+func (s *flagSlice) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *flagSlice) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+func parseInputUtxo(s string) (int, *wire.TxOut, error) {
+	parts := strings.Split(s, ":")
+	if len(parts) != 3 {
+		return 0, nil, fmt.Errorf("format index:value:pk_script_hex")
+	}
+
+	idx, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, nil, fmt.Errorf("invalid index: %w", err)
+	}
+	value, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, nil, fmt.Errorf("invalid value: %w", err)
+	}
+	if value <= 0 {
+		return 0, nil, fmt.Errorf("value must be > 0")
+	}
+	pkScript, err := hex.DecodeString(parts[2])
+	if err != nil {
+		return 0, nil, fmt.Errorf("invalid pk_script: %w", err)
+	}
+	if len(pkScript) == 0 {
+		return 0, nil, fmt.Errorf("pk_script required")
+	}
+
+	return idx, &wire.TxOut{
+		Value:    value,
+		PkScript: pkScript,
+	}, nil
 }
 
 type walletUtxo struct {

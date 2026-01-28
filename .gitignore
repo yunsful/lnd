@@ -30,6 +30,9 @@ _testmain.go
 /lncli-debug
 /lnd-itest
 /lncli-itest
+/htlcpsbt
+/htlcsuccess
+/htlcmerge
 
 # Integration test log files
 itest/*.log
@@ -85,3 +88,8 @@ coverage.txt
 
 # All test data generated from rapid.
 */testdata
+
+/taprootscript.txt
+script*
+/tmp
+/tmp/*
