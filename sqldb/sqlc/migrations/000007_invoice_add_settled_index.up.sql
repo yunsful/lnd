@@ -1,1 +1,0 @@
-CREATE INDEX IF NOT EXISTS invoices_settle_index_idx ON invoices(settle_index);

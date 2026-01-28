@@ -1,9 +1,0 @@
-2026-01-05 18:05:08.936 [INF] CHAN: chantools version v0.14.1 commit 
-2026-01-05 18:05:08.936 [INF] CHAN: Using 2 known outputs for matching.
-2026-01-05 18:05:57.752 [INF] CHAN: chantools version v0.14.1 commit 
-2026-01-05 18:05:57.752 [INF] CHAN: Using 2 known outputs for matching.
-2026-01-05 18:07:35.944 [INF] CHAN: chantools version v0.14.1 commit 
-2026-01-05 18:07:35.944 [INF] CHAN: Using 2 known outputs for matching.
-2026-01-05 18:07:45.429 [INF] CHAN: Found 1 unspent outputs for address bc1qevewe3tmkkj006y8g4ndker5rjkax0l7wt79zmpeyu0f7m73690sjhzsxd
-2026-01-05 18:08:08.196 [INF] CHAN: Fee 110 sats of 19056 total amount (estimated weight 443)
-2026-01-05 18:08:08.197 [INF] CHAN: Transaction: 020000000001015654d59e26f0f64c6b816580336c122d4018c61802abef9ec3d175dc78dece5701000000000100000001024a00000000000016001496577db038c38ca3cad637e044b914a1a409ec4a02473044022036e2bd1ae8f3c06a71dc1d13e02ce168796117ae4bdd4c58fb7651239c9f2fb302200ecd02b41a746e25705f32bec68b583f5d5bb114418656e94fbfc96b6dfbca80012521030f62d7695df883bf00869d5628e47ea295e70cd88731d9e773f4c57948449a60ad51b200000000

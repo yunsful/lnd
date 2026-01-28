@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS invoices_settle_index_idx;
